@@ -36,7 +36,10 @@ jobs:
         run: |
           git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
-          # We add the file from the frontend folder
+          
+          # 1. Add the file
           git add frontend/src/jobs.json
-          git commit -m "Auto-update jobs data" || echo "No changes to commit"
-          git push
+          
+          # 2. Check for changes
+          # If no changes, exit the script safely
+          git diff --staged --quiet || (git commit -m "Auto-update jobs data" && git pull --rebase origin main && git push)

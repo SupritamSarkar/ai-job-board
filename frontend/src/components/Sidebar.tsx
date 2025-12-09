@@ -1,6 +1,4 @@
 // src/components/Sidebar.tsx
-import React from 'react';
-
 const FilterSection = ({ title, items }: { title: string, items: string[] }) => (
   <div className="mb-6">
     <h3 className="font-bold text-gray-800 mb-3 text-sm">{title}</h3>

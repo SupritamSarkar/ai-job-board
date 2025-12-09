@@ -1,3 +1,12 @@
+@import "tailwindcss";
+
+@tailwind utilities;
+
+body {
+  background-color: #0d1117; /* Very dark (almost black) background */
+  color: #e6edf3; /* Soft white text */
+}
+
 :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;

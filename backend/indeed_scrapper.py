@@ -1,20 +1,20 @@
 """
-Indeed Job Scraper - Replaced by Internshala Jobs
-Indeed blocks scraping from GitHub Actions, so we use Internshala Jobs instead.
-This file now imports and calls the Internshala Jobs scraper.
+Indeed Job Scraper - DISABLED
+Indeed and Internshala Jobs both block scraping from GitHub Actions.
+Only Naukri works for jobs.
 """
 
 from datetime import datetime
-from internshala_jobs_scrapper import scrape_internshala_jobs
 
 def scrape_indeed():
     """
-    Replacement for Indeed scraper.
-    Uses Internshala Jobs since Indeed blocks all scraping attempts from GitHub Actions.
+    Indeed/Internshala Jobs scraper - Currently disabled.
+    Both sources block scraping from GitHub Actions.
+    Only Naukri works for jobs.
     """
-    print(f"[{datetime.now()}] Starting Indeed replacement (Internshala Jobs)...")
-    return scrape_internshala_jobs()
+    print(f"[{datetime.now()}] Indeed/Additional Job Scrape skipped (not available)")
+    print(f"   [Additional] Total Found: 0 jobs.")
+    return []
 
 if __name__ == "__main__":
-    jobs = scrape_indeed()
-    print(f"\n=== Scraped {len(jobs)} jobs ===")
+    scrape_indeed()

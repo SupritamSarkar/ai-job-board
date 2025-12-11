@@ -1,131 +1,289 @@
-import requests
+"""
+Multi-Source Internship Scraper using Selenium
+Scrapes AI/ML internships from TimesJobs, Freshersworld, and Internshala
+Uses same approach as Naukri scraper (Selenium with headless Chrome)
+"""
+
+import time
+import random
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from datetime import datetime
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 
-# Free Job APIs that work without authentication
-APIS = {
-    "RemoteOK": "https://remoteok.com/api",
-    "Arbeitnow": "https://www.arbeitnow.com/api/job-board-api"
-}
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json",
-}
+def get_driver():
+    """Create and return a configured Chrome driver"""
+    chrome_options = Options()
+    chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--window-size=1920,1080")
+    
+    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    chrome_options.add_argument(f'user-agent={user_agent}')
+    
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
 
-def scrape_remoteok_internships():
-    """Scrape internships from RemoteOK API"""
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    
+    return driver
+
+
+# ===========================================
+# 1. TimesJobs Internship Scraper
+# ===========================================
+def scrape_timesjobs_internships():
+    """Scrape AI/ML internships from TimesJobs"""
+    print("   [TimesJobs] Starting internship scrape...")
     internships = []
+    
+    driver = get_driver()
+    
     try:
-        print("   [RemoteOK] Fetching internships...")
-        response = requests.get(APIS["RemoteOK"], headers=HEADERS, timeout=30)
+        url = "https://www.timesjobs.com/candidate/job-search.html?searchType=personalizedSearch&from=submit&txtKeyword=ai+ml+intern&cboPresFuncArea=35"
+        driver.get(url)
         
-        if response.status_code == 200:
-            data = response.json()
-            # First item is metadata, skip it
-            job_list = data[1:] if len(data) > 1 else []
-            
-            # Filter for AI/ML internships
-            keywords = ['intern', 'internship', 'trainee', 'graduate', 'junior', 'entry level']
-            ai_keywords = ['ai', 'ml', 'machine learning', 'artificial intelligence', 'data', 'deep learning']
-            
-            for job in job_list:
-                title = job.get('position', '').lower()
-                tags = ' '.join(job.get('tags', [])).lower()
+        time.sleep(random.uniform(3, 5))
+        
+        try:
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "job-bx"))
+            )
+        except:
+            print("   [TimesJobs] Timeout waiting for internships")
+            driver.quit()
+            return internships
+        
+        job_cards = driver.find_elements(By.CLASS_NAME, "job-bx")
+        
+        for card in job_cards:
+            try:
+                # Title & Link
+                title_elem = card.find_element(By.CSS_SELECTOR, "h2 a")
+                title = title_elem.text.strip()
+                link = title_elem.get_attribute("href")
                 
-                # Must be an internship AND related to AI/ML/Data
-                is_internship = any(kw in title for kw in keywords)
-                is_ai_related = any(kw in title or kw in tags for kw in ai_keywords)
+                # Company
+                try:
+                    company = card.find_element(By.CLASS_NAME, "joblist-comp-name").text.strip()
+                except:
+                    company = "N/A"
                 
-                if is_internship or (is_ai_related and 'junior' in title):
-                    salary = job.get('salary_min', '')
-                    if salary:
-                        salary_max = job.get('salary_max', '')
-                        salary = f"${salary:,}" + (f" - ${salary_max:,}" if salary_max else "") + "/yr"
-                    else:
-                        salary = "Not Disclosed"
-                    
-                    internships.append({
-                        "Title": job.get('position', 'N/A'),
-                        "Company": job.get('company', 'N/A'),
-                        "Experience": "Internship",
-                        "Location": job.get('location', 'Remote'),
-                        "Description": job.get('description', 'See Link')[:200] + "..." if job.get('description') else "See Link",
-                        "Salary": salary,
-                        "Link": job.get('url', ''),
-                        "Site": "RemoteOK",
-                        "Last_Updated": str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                    })
-            
-            print(f"   [RemoteOK] Found {len(internships)} internships")
-        else:
-            print(f"   [RemoteOK] HTTP {response.status_code}")
-            
+                # Location
+                try:
+                    location_list = card.find_elements(By.CSS_SELECTOR, "ul.top-jd-dtl li")
+                    location = location_list[2].text.strip() if len(location_list) > 2 else "N/A"
+                except:
+                    location = "N/A"
+                
+                internships.append({
+                    "Title": title,
+                    "Company": company,
+                    "Experience": "Internship",
+                    "Location": location,
+                    "Description": "See Link",
+                    "Salary": "Not Disclosed",
+                    "Link": link,
+                    "Site": "TimesJobs"
+                })
+            except:
+                continue
+                
+        print(f"   [TimesJobs] Found {len(internships)} internships")
+        
     except Exception as e:
-        print(f"   [RemoteOK] Error: {e}")
+        print(f"   [TimesJobs] Error: {e}")
+    finally:
+        driver.quit()
     
     return internships
 
-def scrape_arbeitnow_internships():
-    """Scrape internships from Arbeitnow API"""
+
+# ===========================================
+# 2. Freshersworld Internship Scraper
+# ===========================================
+def scrape_freshersworld_internships():
+    """Scrape AI/ML internships from Freshersworld"""
+    print("   [Freshersworld] Starting internship scrape...")
     internships = []
+    
+    driver = get_driver()
+    
     try:
-        print("   [Arbeitnow] Fetching internships...")
-        response = requests.get(APIS["Arbeitnow"], headers=HEADERS, timeout=30)
+        url = "https://www.freshersworld.com/jobs/category/internship-jobs"
+        driver.get(url)
         
-        if response.status_code == 200:
-            data = response.json()
-            job_list = data.get('data', [])
-            
-            # Filter for internships
-            keywords = ['intern', 'internship', 'trainee', 'graduate', 'working student', 'werkstudent']
-            ai_keywords = ['ai', 'ml', 'machine learning', 'data', 'software', 'developer', 'engineer']
-            
-            for job in job_list:
-                title = job.get('title', '').lower()
-                tags = ' '.join(job.get('tags', [])).lower()
+        time.sleep(random.uniform(3, 5))
+        
+        try:
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "job-container"))
+            )
+        except:
+            print("   [Freshersworld] Timeout waiting for internships")
+            driver.quit()
+            return internships
+        
+        job_cards = driver.find_elements(By.CLASS_NAME, "job-container")
+        
+        for card in job_cards:
+            try:
+                # Title & Link
+                title_elem = card.find_element(By.CSS_SELECTOR, "a.job-title")
+                title = title_elem.text.strip()
+                link = title_elem.get_attribute("href")
                 
-                is_internship = any(kw in title for kw in keywords)
-                is_tech = any(kw in title or kw in tags for kw in ai_keywords)
+                # Company
+                try:
+                    company = card.find_element(By.CLASS_NAME, "company-name").text.strip()
+                except:
+                    company = "N/A"
                 
-                if is_internship and is_tech:
-                    internships.append({
-                        "Title": job.get('title', 'N/A'),
-                        "Company": job.get('company_name', 'N/A'),
-                        "Experience": "Internship",
-                        "Location": job.get('location', 'Remote'),
-                        "Description": "See Link",
-                        "Salary": "Not Disclosed",
-                        "Link": job.get('url', ''),
-                        "Site": "Arbeitnow",
-                        "Last_Updated": str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                    })
-            
-            print(f"   [Arbeitnow] Found {len(internships)} internships")
-        else:
-            print(f"   [Arbeitnow] HTTP {response.status_code}")
-            
+                # Location
+                try:
+                    location = card.find_element(By.CLASS_NAME, "job-location").text.strip()
+                except:
+                    location = "N/A"
+                
+                internships.append({
+                    "Title": title,
+                    "Company": company,
+                    "Experience": "Internship",
+                    "Location": location,
+                    "Description": "See Link",
+                    "Salary": "Not Disclosed",
+                    "Link": link,
+                    "Site": "Freshersworld"
+                })
+            except:
+                continue
+                
+        print(f"   [Freshersworld] Found {len(internships)} internships")
+        
     except Exception as e:
-        print(f"   [Arbeitnow] Error: {e}")
+        print(f"   [Freshersworld] Error: {e}")
+    finally:
+        driver.quit()
     
     return internships
 
+
+# ===========================================
+# 3. Internshala Scraper
+# ===========================================
+def scrape_internshala():
+    """Scrape AI/ML internships from Internshala"""
+    print("   [Internshala] Starting scrape...")
+    internships = []
+    
+    driver = get_driver()
+    
+    try:
+        url = "https://internshala.com/internships/machine-learning-internship/"
+        driver.get(url)
+        
+        time.sleep(random.uniform(3, 5))
+        
+        try:
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "internship_meta"))
+            )
+        except:
+            print("   [Internshala] Timeout waiting for internships")
+            driver.quit()
+            return internships
+        
+        job_cards = driver.find_elements(By.CLASS_NAME, "internship_meta")
+        
+        for card in job_cards:
+            try:
+                # Title & Link
+                title_elem = card.find_element(By.CSS_SELECTOR, "a.job-title-href")
+                title = title_elem.text.strip()
+                link = "https://internshala.com" + title_elem.get_attribute("href") if title_elem.get_attribute("href").startswith("/") else title_elem.get_attribute("href")
+                
+                # Company
+                try:
+                    company = card.find_element(By.CLASS_NAME, "company_name").text.strip()
+                except:
+                    company = "N/A"
+                
+                # Location
+                try:
+                    location = card.find_element(By.CSS_SELECTOR, "a.location_link").text.strip()
+                except:
+                    location = "N/A"
+                
+                # Stipend
+                try:
+                    stipend = card.find_element(By.CLASS_NAME, "stipend").text.strip()
+                except:
+                    stipend = "Not Disclosed"
+                
+                internships.append({
+                    "Title": title,
+                    "Company": company,
+                    "Experience": "Internship",
+                    "Location": location,
+                    "Description": "See Link",
+                    "Salary": stipend,
+                    "Link": link,
+                    "Site": "Internshala"
+                })
+            except:
+                continue
+                
+        print(f"   [Internshala] Found {len(internships)} internships")
+        
+    except Exception as e:
+        print(f"   [Internshala] Error: {e}")
+    finally:
+        driver.quit()
+    
+    return internships
+
+
+# ===========================================
+# MAIN SCRAPE FUNCTION
+# ===========================================
 def scrape_indeed_intern():
-    """Scrape internships from free job APIs (replacing Indeed which blocks GitHub Actions)"""
-    print(f"[{datetime.now()}] Starting Internship Scrape (Free APIs Mode)...")
+    """
+    Multi-source internship scraper using Selenium
+    Scrapes from: TimesJobs, Freshersworld, Internshala
+    """
+    print(f"[{datetime.now()}] Starting Multi-Source Internship Scrape (Selenium)...")
     
     all_internships = []
     
-    # Scrape from RemoteOK
-    all_internships.extend(scrape_remoteok_internships())
+    # Scrape from all sources
+    all_internships.extend(scrape_timesjobs_internships())
+    time.sleep(2)
+    all_internships.extend(scrape_freshersworld_internships())
+    time.sleep(2)
+    all_internships.extend(scrape_internshala())
     
-    # Scrape from Arbeitnow
-    all_internships.extend(scrape_arbeitnow_internships())
+    # Remove duplicates by link
+    seen_links = set()
+    unique_internships = []
+    for intern in all_internships:
+        if intern['Link'] not in seen_links:
+            seen_links.add(intern['Link'])
+            unique_internships.append(intern)
     
-    print(f"   [Free APIs] Total Found: {len(all_internships)} internships.")
-    return all_internships
+    print(f"   [Multi-Source] Total Found: {len(unique_internships)} unique internships.")
+    return unique_internships
+
 
 if __name__ == "__main__":
     internships = scrape_indeed_intern()
-    print(f"\nScraped {len(internships)} internships total")
-    for intern in internships[:5]:
-        print(f"  - {intern['Title']} at {intern['Company']} ({intern['Site']})")
+    print(f"\n=== Scraped {len(internships)} internships total ===")
+    for intern in internships[:10]:
+        print(f"  [{intern['Site']}] {intern['Title']} at {intern['Company']}")

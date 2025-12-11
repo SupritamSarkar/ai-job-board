@@ -36,7 +36,7 @@ def scrape_naukri_intern():
 
     try:
         # Scrape 6 pages for internships
-        for page in range(1, 7): 
+        for page in range(1, 2): 
             # Logic to handle pagination in the URL
             url = SEARCH_URL if page == 1 else SEARCH_URL.replace("?", f"-{page}?")
             print(f"   [Naukri Intern] Scraping Page {page}...")

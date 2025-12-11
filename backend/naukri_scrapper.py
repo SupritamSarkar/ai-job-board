@@ -38,7 +38,7 @@ def scrape_naukri():
     all_jobs = []
 
     try:
-        for page in range(1, 7):
+        for page in range(1, 2):
             url = SEARCH_URL if page == 1 else SEARCH_URL.replace("?", f"-{page}?")
             print(f"   [Naukri] Scraping Page {page}...")
             

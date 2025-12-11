@@ -5,22 +5,20 @@ import random
 from datetime import datetime, timedelta
 
 # --- IMPORT ALL SCRAPERS ---
-# Ensure these files exist in the same directory
 from naukri_scrapper import scrape_naukri
 from indeed_scrapper import scrape_indeed
 from naukri_intern_scrapper import scrape_naukri_intern
 from indeed_intern_scrapper import scrape_indeed_intern
+from internshala_scrapper import scrape_internshala
 
 def is_recent(date_str):
     """
     Checks if a date string is within the last 7 days.
     """
     try:
-        # Try full timestamp format first
         job_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
     except ValueError:
         try:
-            # Fallback to simple date format (legacy data)
             job_date = datetime.strptime(date_str, "%Y-%m-%d")
         except ValueError:
             return False
@@ -86,18 +84,18 @@ def main():
     current_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # ==========================================
-    # PHASE 1: FULL-TIME JOBS (Naukri + Indeed)
+    # PHASE 1: FULL-TIME JOBS (Naukri - 7 pages)
     # ==========================================
     print("--- [PHASE 1] SCRAPING JOBS ---")
     
-    # 1.1 Naukri Jobs
+    # 1.1 Naukri Jobs (7 pages)
     try:
         naukri_jobs = scrape_naukri()
     except Exception as e:
         print(f"Error in Naukri Job Scraper: {e}")
         naukri_jobs = []
 
-    # 1.2 Indeed Jobs
+    # 1.2 Indeed Jobs (disabled - blocked)
     try:
         time.sleep(2)
         indeed_jobs = scrape_indeed()
@@ -119,18 +117,18 @@ def main():
 
 
     # ==========================================
-    # PHASE 2: INTERNSHIPS (Naukri + Indeed)
+    # PHASE 2: INTERNSHIPS (Naukri + Internshala)
     # ==========================================
     print("--- [PHASE 2] SCRAPING INTERNSHIPS ---")
 
-    # 2.1 Naukri Internships
+    # 2.1 Naukri Internships (7 pages)
     try:
         naukri_interns = scrape_naukri_intern()
     except Exception as e:
         print(f"Error in Naukri Intern Scraper: {e}")
         naukri_interns = []
 
-    # 2.2 Indeed Internships
+    # 2.2 Indeed Internships (disabled - blocked)
     try:
         time.sleep(2)
         indeed_interns = scrape_indeed_intern()
@@ -138,8 +136,16 @@ def main():
         print(f"Error in Indeed Intern Scraper: {e}")
         indeed_interns = []
 
+    # 2.3 Internshala Internships (7 pages) - WORKING!
+    try:
+        time.sleep(2)
+        internshala_interns = scrape_internshala()
+    except Exception as e:
+        print(f"Error in Internshala Scraper: {e}")
+        internshala_interns = []
+
     # Combine & Timestamp
-    new_interns = naukri_interns + indeed_interns
+    new_interns = naukri_interns + indeed_interns + internshala_interns
     for item in new_interns:
         item['Last_Updated'] = current_timestamp
 

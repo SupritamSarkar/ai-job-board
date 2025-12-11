@@ -1,139 +1,123 @@
 import requests
-import json
-import re
 from datetime import datetime
 
-# Indeed uses an internal API for job listings
-# We'll scrape by mimicking mobile/API requests
+# Free Job APIs that work without authentication
+APIS = {
+    "RemoteOK": "https://remoteok.com/api",
+    "Arbeitnow": "https://www.arbeitnow.com/api/job-board-api"
+}
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "none",
-    "Sec-Fetch-User": "?1",
-    "Cache-Control": "max-age=0",
+    "Accept": "application/json",
 }
 
-# API endpoints for Indeed job search
-REGIONS = [
-    ("India", "https://in.indeed.com", "ai ml engineer"),
-    ("USA", "https://www.indeed.com", "ai ml engineer"),
-]
-
-def extract_jobs_from_html(html_content, region_name, base_url):
-    """Extract job data from Indeed HTML using regex patterns"""
+def scrape_remoteok():
+    """Scrape jobs from RemoteOK API"""
     jobs = []
-    
-    # Try to find the job data in the page's JavaScript
-    # Indeed embeds job data as JSON in script tags
-    
-    # Pattern 1: mosaic-provider-jobcards data
-    pattern1 = r'window\.mosaic\.providerData\["mosaic-provider-jobcards"\]\s*=\s*(\{.*?\});'
-    match = re.search(pattern1, html_content, re.DOTALL)
-    
-    if match:
-        try:
-            data = json.loads(match.group(1))
-            if 'metaData' in data and 'mosaicProviderJobCardsModel' in data['metaData']:
-                job_cards = data['metaData']['mosaicProviderJobCardsModel'].get('results', [])
-                for job in job_cards:
+    try:
+        print("   [RemoteOK] Fetching jobs...")
+        response = requests.get(APIS["RemoteOK"], headers=HEADERS, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json()
+            # First item is metadata, skip it
+            job_list = data[1:] if len(data) > 1 else []
+            
+            # Filter for AI/ML related jobs
+            keywords = ['ai', 'ml', 'machine learning', 'artificial intelligence', 'data science', 'deep learning', 'nlp', 'computer vision']
+            
+            for job in job_list:
+                title = job.get('position', '').lower()
+                tags = ' '.join(job.get('tags', [])).lower()
+                
+                if any(kw in title or kw in tags for kw in keywords):
+                    salary = job.get('salary_min', '')
+                    if salary:
+                        salary_max = job.get('salary_max', '')
+                        salary = f"${salary:,}" + (f" - ${salary_max:,}" if salary_max else "") + "/yr"
+                    else:
+                        salary = "Not Disclosed"
+                    
                     jobs.append({
-                        "Title": job.get('title', 'N/A'),
+                        "Title": job.get('position', 'N/A'),
                         "Company": job.get('company', 'N/A'),
                         "Experience": "N/A",
-                        "Location": job.get('formattedLocation', 'N/A'),
-                        "Description": "See Link",
-                        "Salary": job.get('salarySnippet', {}).get('text', 'Not Disclosed') if job.get('salarySnippet') else 'Not Disclosed',
-                        "Link": f"{base_url}/viewjob?jk={job.get('jobkey', '')}",
-                        "Site": f"Indeed ({region_name})",
+                        "Location": job.get('location', 'Remote'),
+                        "Description": job.get('description', 'See Link')[:200] + "..." if job.get('description') else "See Link",
+                        "Salary": salary,
+                        "Link": job.get('url', ''),
+                        "Site": "RemoteOK",
                         "Last_Updated": str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                     })
-        except json.JSONDecodeError:
-            pass
+            
+            print(f"   [RemoteOK] Found {len(jobs)} AI/ML jobs")
+        else:
+            print(f"   [RemoteOK] HTTP {response.status_code}")
+            
+    except Exception as e:
+        print(f"   [RemoteOK] Error: {e}")
     
-    # Pattern 2: Search for job cards in alternative JSON structure
-    if not jobs:
-        pattern2 = r'"jobResults":\s*\[(.*?)\]'
-        match = re.search(pattern2, html_content, re.DOTALL)
-        if match:
-            try:
-                # Try to parse individual job objects
-                job_pattern = r'\{"jobkey":"([^"]+)".*?"title":"([^"]+)".*?"company":"([^"]+)".*?"formattedLocation":"([^"]+)"'
-                for job_match in re.finditer(job_pattern, html_content):
-                    jobkey, title, company, location = job_match.groups()
+    return jobs
+
+def scrape_arbeitnow():
+    """Scrape jobs from Arbeitnow API"""
+    jobs = []
+    try:
+        print("   [Arbeitnow] Fetching jobs...")
+        response = requests.get(APIS["Arbeitnow"], headers=HEADERS, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json()
+            job_list = data.get('data', [])
+            
+            # Filter for AI/ML related jobs
+            keywords = ['ai', 'ml', 'machine learning', 'artificial intelligence', 'data science', 'deep learning', 'nlp', 'computer vision', 'engineer']
+            
+            for job in job_list:
+                title = job.get('title', '').lower()
+                description = job.get('description', '').lower()
+                tags = ' '.join(job.get('tags', [])).lower()
+                
+                if any(kw in title or kw in tags for kw in keywords):
                     jobs.append({
-                        "Title": title,
-                        "Company": company,
+                        "Title": job.get('title', 'N/A'),
+                        "Company": job.get('company_name', 'N/A'),
                         "Experience": "N/A",
-                        "Location": location,
+                        "Location": job.get('location', 'Remote'),
                         "Description": "See Link",
                         "Salary": "Not Disclosed",
-                        "Link": f"{base_url}/viewjob?jk={jobkey}",
-                        "Site": f"Indeed ({region_name})",
+                        "Link": job.get('url', ''),
+                        "Site": "Arbeitnow",
                         "Last_Updated": str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                     })
-            except:
-                pass
-    
-    # Pattern 3: Basic HTML parsing fallback
-    if not jobs:
-        # Look for job links with data attributes
-        job_pattern = r'data-jk="([^"]+)".*?title="([^"]+)"'
-        for match in re.finditer(job_pattern, html_content, re.DOTALL):
-            jobkey, title = match.groups()
-            jobs.append({
-                "Title": title[:100],  # Truncate long titles
-                "Company": "See Link",
-                "Experience": "N/A",
-                "Location": "See Link",
-                "Description": "See Link",
-                "Salary": "Not Disclosed",
-                "Link": f"{base_url}/viewjob?jk={jobkey}",
-                "Site": f"Indeed ({region_name})",
-                "Last_Updated": str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-            })
+            
+            print(f"   [Arbeitnow] Found {len(jobs)} AI/ML jobs")
+        else:
+            print(f"   [Arbeitnow] HTTP {response.status_code}")
+            
+    except Exception as e:
+        print(f"   [Arbeitnow] Error: {e}")
     
     return jobs
 
 def scrape_indeed():
-    print(f"[{datetime.now()}] Starting Indeed Scrape (HTTP Request Mode)...")
+    """Scrape jobs from free job APIs (replacing Indeed which blocks GitHub Actions)"""
+    print(f"[{datetime.now()}] Starting Job Scrape (Free APIs Mode)...")
     
     all_jobs = []
-    session = requests.Session()
-    session.headers.update(HEADERS)
     
-    for region_name, base_url, query in REGIONS:
-        print(f"\n--- Switching to Indeed {region_name} ---")
-        
-        try:
-            # Build search URL
-            search_url = f"{base_url}/jobs?q={query.replace(' ', '+')}&l="
-            print(f"   [Indeed {region_name}] Fetching: {search_url}")
-            
-            response = session.get(search_url, timeout=30)
-            
-            if response.status_code == 200:
-                jobs = extract_jobs_from_html(response.text, region_name, base_url)
-                print(f"   [Indeed {region_name}] Found {len(jobs)} jobs")
-                all_jobs.extend(jobs)
-            else:
-                print(f"   [Indeed {region_name}] HTTP {response.status_code}")
-                
-        except requests.RequestException as e:
-            print(f"   [Indeed {region_name}] Request failed: {e}")
-            continue
+    # Scrape from RemoteOK
+    all_jobs.extend(scrape_remoteok())
     
-    print(f"   [Indeed] Total Found: {len(all_jobs)} jobs.")
+    # Scrape from Arbeitnow
+    all_jobs.extend(scrape_arbeitnow())
+    
+    print(f"   [Free APIs] Total Found: {len(all_jobs)} jobs.")
     return all_jobs
 
 if __name__ == "__main__":
     jobs = scrape_indeed()
     print(f"\nScraped {len(jobs)} jobs total")
-    for job in jobs[:3]:
-        print(f"  - {job['Title']} at {job['Company']}")
+    for job in jobs[:5]:
+        print(f"  - {job['Title']} at {job['Company']} ({job['Site']})")

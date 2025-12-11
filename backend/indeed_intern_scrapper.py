@@ -1,144 +1,131 @@
 import requests
-import json
-import re
 from datetime import datetime
 
-# Indeed uses an internal API for job listings
-# We'll scrape by mimicking mobile/API requests
+# Free Job APIs that work without authentication
+APIS = {
+    "RemoteOK": "https://remoteok.com/api",
+    "Arbeitnow": "https://www.arbeitnow.com/api/job-board-api"
+}
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "none",
-    "Sec-Fetch-User": "?1",
-    "Cache-Control": "max-age=0",
+    "Accept": "application/json",
 }
 
-# API endpoints for Indeed internship search
-REGIONS = [
-    ("India", "https://in.indeed.com", "ai ml engineer intern"),
-    ("USA", "https://www.indeed.com", "ai ml intern"),
-]
-
-def extract_jobs_from_html(html_content, region_name, base_url):
-    """Extract internship data from Indeed HTML using regex patterns"""
-    jobs = []
-    
-    # Try to find the job data in the page's JavaScript
-    # Indeed embeds job data as JSON in script tags
-    
-    # Pattern 1: mosaic-provider-jobcards data
-    pattern1 = r'window\.mosaic\.providerData\["mosaic-provider-jobcards"\]\s*=\s*(\{.*?\});'
-    match = re.search(pattern1, html_content, re.DOTALL)
-    
-    if match:
-        try:
-            data = json.loads(match.group(1))
-            if 'metaData' in data and 'mosaicProviderJobCardsModel' in data['metaData']:
-                job_cards = data['metaData']['mosaicProviderJobCardsModel'].get('results', [])
-                for job in job_cards:
-                    salary = job.get('salarySnippet', {}).get('text', 'Not Disclosed') if job.get('salarySnippet') else 'Not Disclosed'
-                    # Look for stipend info
-                    if salary == 'Not Disclosed' and job.get('extractedSalary'):
-                        salary = f"₹{job['extractedSalary'].get('min', 'N/A')} - ₹{job['extractedSalary'].get('max', 'N/A')}"
+def scrape_remoteok_internships():
+    """Scrape internships from RemoteOK API"""
+    internships = []
+    try:
+        print("   [RemoteOK] Fetching internships...")
+        response = requests.get(APIS["RemoteOK"], headers=HEADERS, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json()
+            # First item is metadata, skip it
+            job_list = data[1:] if len(data) > 1 else []
+            
+            # Filter for AI/ML internships
+            keywords = ['intern', 'internship', 'trainee', 'graduate', 'junior', 'entry level']
+            ai_keywords = ['ai', 'ml', 'machine learning', 'artificial intelligence', 'data', 'deep learning']
+            
+            for job in job_list:
+                title = job.get('position', '').lower()
+                tags = ' '.join(job.get('tags', [])).lower()
+                
+                # Must be an internship AND related to AI/ML/Data
+                is_internship = any(kw in title for kw in keywords)
+                is_ai_related = any(kw in title or kw in tags for kw in ai_keywords)
+                
+                if is_internship or (is_ai_related and 'junior' in title):
+                    salary = job.get('salary_min', '')
+                    if salary:
+                        salary_max = job.get('salary_max', '')
+                        salary = f"${salary:,}" + (f" - ${salary_max:,}" if salary_max else "") + "/yr"
+                    else:
+                        salary = "Not Disclosed"
                     
-                    jobs.append({
-                        "Title": job.get('title', 'N/A'),
+                    internships.append({
+                        "Title": job.get('position', 'N/A'),
                         "Company": job.get('company', 'N/A'),
                         "Experience": "Internship",
-                        "Location": job.get('formattedLocation', 'N/A'),
-                        "Description": "See Link",
+                        "Location": job.get('location', 'Remote'),
+                        "Description": job.get('description', 'See Link')[:200] + "..." if job.get('description') else "See Link",
                         "Salary": salary,
-                        "Link": f"{base_url}/viewjob?jk={job.get('jobkey', '')}",
-                        "Site": f"Indeed ({region_name})",
+                        "Link": job.get('url', ''),
+                        "Site": "RemoteOK",
                         "Last_Updated": str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                     })
-        except json.JSONDecodeError:
-            pass
+            
+            print(f"   [RemoteOK] Found {len(internships)} internships")
+        else:
+            print(f"   [RemoteOK] HTTP {response.status_code}")
+            
+    except Exception as e:
+        print(f"   [RemoteOK] Error: {e}")
     
-    # Pattern 2: Search for job cards in alternative JSON structure
-    if not jobs:
-        pattern2 = r'"jobResults":\s*\[(.*?)\]'
-        match = re.search(pattern2, html_content, re.DOTALL)
-        if match:
-            try:
-                # Try to parse individual job objects
-                job_pattern = r'\{"jobkey":"([^"]+)".*?"title":"([^"]+)".*?"company":"([^"]+)".*?"formattedLocation":"([^"]+)"'
-                for job_match in re.finditer(job_pattern, html_content):
-                    jobkey, title, company, location = job_match.groups()
-                    jobs.append({
-                        "Title": title,
-                        "Company": company,
+    return internships
+
+def scrape_arbeitnow_internships():
+    """Scrape internships from Arbeitnow API"""
+    internships = []
+    try:
+        print("   [Arbeitnow] Fetching internships...")
+        response = requests.get(APIS["Arbeitnow"], headers=HEADERS, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json()
+            job_list = data.get('data', [])
+            
+            # Filter for internships
+            keywords = ['intern', 'internship', 'trainee', 'graduate', 'working student', 'werkstudent']
+            ai_keywords = ['ai', 'ml', 'machine learning', 'data', 'software', 'developer', 'engineer']
+            
+            for job in job_list:
+                title = job.get('title', '').lower()
+                tags = ' '.join(job.get('tags', [])).lower()
+                
+                is_internship = any(kw in title for kw in keywords)
+                is_tech = any(kw in title or kw in tags for kw in ai_keywords)
+                
+                if is_internship and is_tech:
+                    internships.append({
+                        "Title": job.get('title', 'N/A'),
+                        "Company": job.get('company_name', 'N/A'),
                         "Experience": "Internship",
-                        "Location": location,
+                        "Location": job.get('location', 'Remote'),
                         "Description": "See Link",
                         "Salary": "Not Disclosed",
-                        "Link": f"{base_url}/viewjob?jk={jobkey}",
-                        "Site": f"Indeed ({region_name})",
+                        "Link": job.get('url', ''),
+                        "Site": "Arbeitnow",
                         "Last_Updated": str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                     })
-            except:
-                pass
+            
+            print(f"   [Arbeitnow] Found {len(internships)} internships")
+        else:
+            print(f"   [Arbeitnow] HTTP {response.status_code}")
+            
+    except Exception as e:
+        print(f"   [Arbeitnow] Error: {e}")
     
-    # Pattern 3: Basic HTML parsing fallback
-    if not jobs:
-        # Look for job links with data attributes
-        job_pattern = r'data-jk="([^"]+)".*?title="([^"]+)"'
-        for match in re.finditer(job_pattern, html_content, re.DOTALL):
-            jobkey, title = match.groups()
-            jobs.append({
-                "Title": title[:100],  # Truncate long titles
-                "Company": "See Link",
-                "Experience": "Internship",
-                "Location": "See Link",
-                "Description": "See Link",
-                "Salary": "Not Disclosed",
-                "Link": f"{base_url}/viewjob?jk={jobkey}",
-                "Site": f"Indeed ({region_name})",
-                "Last_Updated": str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-            })
-    
-    return jobs
+    return internships
 
 def scrape_indeed_intern():
-    print(f"[{datetime.now()}] Starting Indeed Internship Scrape (HTTP Request Mode)...")
+    """Scrape internships from free job APIs (replacing Indeed which blocks GitHub Actions)"""
+    print(f"[{datetime.now()}] Starting Internship Scrape (Free APIs Mode)...")
     
     all_internships = []
-    session = requests.Session()
-    session.headers.update(HEADERS)
     
-    for region_name, base_url, query in REGIONS:
-        print(f"\n--- Switching to Indeed {region_name} (Internships) ---")
-        
-        try:
-            # Build search URL
-            search_url = f"{base_url}/jobs?q={query.replace(' ', '+')}&l="
-            print(f"   [Indeed {region_name}] Fetching: {search_url}")
-            
-            response = session.get(search_url, timeout=30)
-            
-            if response.status_code == 200:
-                jobs = extract_jobs_from_html(response.text, region_name, base_url)
-                print(f"   [Indeed {region_name}] Found {len(jobs)} internships")
-                all_internships.extend(jobs)
-            else:
-                print(f"   [Indeed {region_name}] HTTP {response.status_code}")
-                
-        except requests.RequestException as e:
-            print(f"   [Indeed {region_name}] Request failed: {e}")
-            continue
+    # Scrape from RemoteOK
+    all_internships.extend(scrape_remoteok_internships())
     
-    print(f"   [Indeed] Total Found: {len(all_internships)} internships.")
+    # Scrape from Arbeitnow
+    all_internships.extend(scrape_arbeitnow_internships())
+    
+    print(f"   [Free APIs] Total Found: {len(all_internships)} internships.")
     return all_internships
 
 if __name__ == "__main__":
     internships = scrape_indeed_intern()
     print(f"\nScraped {len(internships)} internships total")
-    for intern in internships[:3]:
-        print(f"  - {intern['Title']} at {intern['Company']}")
+    for intern in internships[:5]:
+        print(f"  - {intern['Title']} at {intern['Company']} ({intern['Site']})")

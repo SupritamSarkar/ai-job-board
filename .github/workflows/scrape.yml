@@ -21,27 +21,22 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10' # Updated to 3.10 for better compatibility
+          python-version: '3.10'
 
-      # Optional: Ensures Chrome is installed on the server for the scraper to find
       - name: Setup Chrome
         uses: browser-actions/setup-chrome@latest
 
       - name: Install Dependencies
+        # ADDED selenium-stealth HERE
         run: |
-          pip install selenium webdriver-manager undetected-chromedriver
+          pip install selenium webdriver-manager selenium-stealth
 
       - name: Run Master Scraper
-        # This now runs the single script that handles both Jobs & Internships
         run: python backend/master_all_scrapper.py
 
       - name: Commit and Push Changes
         run: |
           git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
-          
-          # Add BOTH the jobs and internships files
           git add frontend/src/jobs.json frontend/src/intern.json
-          
-          # Check if there are changes before committing
-          git diff --staged --quiet || (git commit -m "Auto-update jobs and internships data" && git pull --rebase origin main && git push)
+          git diff --staged --quiet || (git commit -m "Auto-update jobs data" && git pull --rebase origin main && git push)

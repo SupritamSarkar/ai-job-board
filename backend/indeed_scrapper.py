@@ -9,38 +9,38 @@ from datetime import datetime
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
-# Regions
+# NEW IMPORT
+from selenium_stealth import stealth
+
 REGIONS = [
     ("India", "https://in.indeed.com/jobs?q=ai+ml+engineer&l="),
     ("USA",   "https://www.indeed.com/jobs?q=ai+ml+engineer&l=") 
 ]
 
 def scrape_indeed():
-    print(f"[{datetime.now()}] Starting Indeed Scrape (Standard Selenium)...")
+    print(f"[{datetime.now()}] Starting Indeed Scrape (Stealth Mode)...")
 
-    # --- SETUP CHROME OPTIONS (Same as Naukri) ---
-    chrome_options = Options()
-    chrome_options.add_argument("--headless=new") 
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--disable-popup-blocking")
-    
-    # 1. Spoof User Agent to look like a real Windows PC
-    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    chrome_options.add_argument(f'user-agent={user_agent}')
-    
-    # 2. Hide Selenium Automation Flags
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("start-maximized")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option('useAutomationExtension', False)
 
-    # Initialize Driver
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-    
-    # 3. Patch navigator.webdriver to undefined
-    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+
+    # --- ACTIVATE STEALTH MODE ---
+    stealth(driver,
+        languages=["en-US", "en"],
+        vendor="Google Inc.",
+        platform="Win32",
+        webgl_vendor="Intel Inc.",
+        renderer="Intel Iris OpenGL Engine",
+        fix_hairline=True,
+    )
 
     all_jobs = []
 
@@ -55,21 +55,19 @@ def scrape_indeed():
                 print(f"   [Indeed {region_name}] Navigating to Page {page + 1}...")
                 driver.get(url)
 
-                # Random sleep to behave like a human
-                time.sleep(random.uniform(3, 5))
+                # Increased sleep slightly for safety
+                time.sleep(random.uniform(4, 7))
 
-                # Check Title for Bot Detection
-                if "challenge" in driver.title.lower() or "security" in driver.title.lower() or "cloudflare" in driver.title.lower():
-                    print("   !!! Cloudflare/Security Challenge detected. Skipping page.")
+                if "challenge" in driver.title.lower() or "security" in driver.title.lower():
+                    print("   !!! Cloudflare detected. Skipping page.")
                     continue
 
                 try:
-                    # Wait for job cards
                     WebDriverWait(driver, 10).until(
                         EC.presence_of_element_located((By.ID, "mosaic-provider-jobcards"))
                     )
                 except:
-                    print(f"   Timeout on {region_name} page {page+1} (Possible blocking)")
+                    print(f"   Timeout on {region_name} page {page+1} (Blocked)")
                     continue
 
                 job_cards = driver.find_elements(By.CLASS_NAME, "job_seen_beacon")
@@ -77,17 +75,17 @@ def scrape_indeed():
 
                 for card in job_cards:
                     try:
-                        # --- Basic Info ---
                         try:
                             title_elem = card.find_element(By.CSS_SELECTOR, "h2.jobTitle a")
                             title = title_elem.text
                             link = title_elem.get_attribute("href")
                         except:
-                            title_elem = card.find_element(By.CSS_SELECTOR, "h2.jobTitle span")
-                            title = title_elem.text
-                            # Find parent 'a' tag or use current url
-                            try: link = card.find_element(By.XPATH, ".//a").get_attribute("href")
-                            except: link = driver.current_url
+                            try:
+                                title_elem = card.find_element(By.CSS_SELECTOR, "h2.jobTitle span")
+                                title = title_elem.text
+                                link = card.find_element(By.XPATH, ".//a").get_attribute("href")
+                            except:
+                                continue
 
                         try: company = card.find_element(By.CSS_SELECTOR, "[data-testid='company-name']").text
                         except: company = "N/A"
@@ -95,10 +93,9 @@ def scrape_indeed():
                         try: location = card.find_element(By.CSS_SELECTOR, "[data-testid='text-location']").text
                         except: location = "N/A"
 
-                        # --- Salary Logic ---
                         salary = "Not Disclosed"
-
-                        # A. Card Check
+                        
+                        # Metadata check
                         try:
                             metadata = card.find_elements(By.CLASS_NAME, "metadata")
                             for m in metadata:
@@ -108,35 +105,17 @@ def scrape_indeed():
                                     break
                         except: pass
 
-                        # B. Right Pane Check (Click & Fetch)
+                        # Click check
                         if salary == "Not Disclosed":
                             try:
-                                # Scroll into view to ensure clickability
                                 driver.execute_script("arguments[0].scrollIntoView();", card)
-                                try:
-                                    card.click()
-                                except:
-                                    # Fallback js click if intercepted
-                                    driver.execute_script("arguments[0].click();", card)
-                                
-                                # Wait briefly for right pane
-                                time.sleep(2) 
-                                
-                                # Try to grab the right pane text
-                                try:
-                                    right_pane = driver.find_element(By.ID, "salaryInfoAndJobType")
-                                    right_pane_text = right_pane.text
-                                    
-                                    currency_indicators = ['$', '₹', '€', '£', 'Lacs']
-                                    if any(symbol in right_pane_text for symbol in currency_indicators):
-                                        salary = right_pane_text
-                                    elif any(char.isdigit() for char in right_pane_text) and \
-                                         any(period in right_pane_text.lower() for period in ['year', 'month', 'pa']):
-                                         salary = right_pane_text
-                                except:
-                                    pass
-                            except:
-                                pass
+                                driver.execute_script("arguments[0].click();", card)
+                                time.sleep(2)
+                                right_pane = driver.find_element(By.ID, "salaryInfoAndJobType").text
+                                if any(s in right_pane for s in ['₹', '$', '€', '£', 'Lacs']) or \
+                                   (any(c.isdigit() for c in right_pane) and "year" in right_pane.lower()):
+                                    salary = right_pane
+                            except: pass
 
                         all_jobs.append({
                             "Title": title,
@@ -149,9 +128,7 @@ def scrape_indeed():
                             "Site": f"Indeed ({region_name})", 
                             "Last_Updated": str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                         })
-                    except Exception:
-                        continue
-            
+                    except: continue
     finally:
         driver.quit()
 

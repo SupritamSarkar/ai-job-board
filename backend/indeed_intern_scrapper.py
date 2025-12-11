@@ -9,33 +9,38 @@ from datetime import datetime
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
-# Internship Specific Regions
+# NEW IMPORT
+from selenium_stealth import stealth
+
 REGIONS = [
     ("India", "https://in.indeed.com/jobs?q=ai+ml+engineer+intern&l="),
     ("USA",   "https://www.indeed.com/jobs?q=ai+ml+intern&l=") 
 ]
 
 def scrape_indeed_intern():
-    print(f"[{datetime.now()}] Starting Indeed Internship Scrape (Standard Selenium)...")
+    print(f"[{datetime.now()}] Starting Indeed Internship Scrape (Stealth Mode)...")
 
-    # --- SETUP CHROME OPTIONS ---
-    chrome_options = Options()
-    chrome_options.add_argument("--headless=new") 
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--disable-popup-blocking")
-    
-    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    chrome_options.add_argument(f'user-agent={user_agent}')
-    
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("start-maximized")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option('useAutomationExtension', False)
 
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+
+    # --- ACTIVATE STEALTH MODE ---
+    stealth(driver,
+        languages=["en-US", "en"],
+        vendor="Google Inc.",
+        platform="Win32",
+        webgl_vendor="Intel Inc.",
+        renderer="Intel Iris OpenGL Engine",
+        fix_hairline=True,
+    )
 
     all_internships = []
 
@@ -50,7 +55,7 @@ def scrape_indeed_intern():
                 print(f"   [Indeed {region_name}] Navigating to Page {page + 1}...")
                 driver.get(url)
 
-                time.sleep(random.uniform(3, 5))
+                time.sleep(random.uniform(4, 7))
 
                 if "challenge" in driver.title.lower() or "security" in driver.title.lower():
                     print("   !!! Cloudflare detected. Skipping.")
@@ -74,10 +79,11 @@ def scrape_indeed_intern():
                             title = title_elem.text
                             link = title_elem.get_attribute("href")
                         except:
-                            title_elem = card.find_element(By.CSS_SELECTOR, "h2.jobTitle span")
-                            title = title_elem.text
-                            try: link = card.find_element(By.XPATH, ".//a").get_attribute("href")
-                            except: link = driver.current_url
+                            try:
+                                title_elem = card.find_element(By.CSS_SELECTOR, "h2.jobTitle span")
+                                title = title_elem.text
+                                link = card.find_element(By.XPATH, ".//a").get_attribute("href")
+                            except: continue
 
                         try: company = card.find_element(By.CSS_SELECTOR, "[data-testid='company-name']").text
                         except: company = "N/A"
@@ -86,8 +92,8 @@ def scrape_indeed_intern():
                         except: location = "N/A"
 
                         salary = "Not Disclosed"
-
-                        # A. Card Check
+                        
+                        # Metadata Check
                         try:
                             metadata = card.find_elements(By.CLASS_NAME, "metadata")
                             for m in metadata:
@@ -97,26 +103,16 @@ def scrape_indeed_intern():
                                     break
                         except: pass
 
-                        # B. Right Pane Check
+                        # Click Check
                         if salary == "Not Disclosed":
                             try:
                                 driver.execute_script("arguments[0].scrollIntoView();", card)
-                                try: card.click()
-                                except: driver.execute_script("arguments[0].click();", card)
-                                
-                                time.sleep(2) 
-
-                                try:
-                                    right_pane = driver.find_element(By.ID, "salaryInfoAndJobType")
-                                    right_pane_text = right_pane.text
-                                    
-                                    currency_indicators = ['$', '₹', '€', '£', 'Lacs', 'stipend']
-                                    if any(symbol in right_pane_text.lower() for symbol in currency_indicators):
-                                        salary = right_pane_text
-                                    elif any(char.isdigit() for char in right_pane_text) and \
-                                         any(period in right_pane_text.lower() for period in ['year', 'month', 'pa']):
-                                         salary = right_pane_text
-                                except: pass
+                                driver.execute_script("arguments[0].click();", card)
+                                time.sleep(2)
+                                right_pane = driver.find_element(By.ID, "salaryInfoAndJobType").text
+                                if any(s in right_pane.lower() for s in ['₹', '$', '€', '£', 'lacs', 'stipend']) or \
+                                   (any(c.isdigit() for c in right_pane) and "month" in right_pane.lower()):
+                                    salary = right_pane
                             except: pass
 
                         all_internships.append({
@@ -130,9 +126,7 @@ def scrape_indeed_intern():
                             "Site": f"Indeed ({region_name})", 
                             "Last_Updated": str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                         })
-                    except:
-                        continue
-            
+                    except: continue
     finally:
         driver.quit()
 

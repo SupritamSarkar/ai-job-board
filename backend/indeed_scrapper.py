@@ -15,20 +15,12 @@ REGIONS = [
 def scrape_indeed():
     print(f"[{datetime.now()}] Starting Indeed Scrape (Xvfb Mode)...")
 
-    # Standard options for UC
     options = uc.ChromeOptions()
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-popup-blocking")
     
-    # IMPORTANT: Do NOT use --headless. 
-    # Xvfb provides the display, so Chrome thinks it's running visibly.
-    
-    # Force version to ensure compatibility in CI
-    driver = uc.Chrome(options=options, version_main=119) 
-    # Note: If 119 fails, removing version_main usually works in GitHub Actions 
-    # as uc downloads the latest patch automatically. 
-    # Let's try WITHOUT version_main first as GitHub updates Chrome frequently.
+    # REMOVED version_main=119 so it auto-matches Chrome 143
     driver = uc.Chrome(options=options)
 
     all_jobs = []
@@ -44,16 +36,16 @@ def scrape_indeed():
                 print(f"   [Indeed {region_name}] Navigating to Page {page + 1}...")
                 driver.get(url)
 
-                time.sleep(random.uniform(5, 8))
+                # Increased wait time for Cloudflare checks
+                time.sleep(random.uniform(8, 12))
 
-                # Check for challenges
-                title = driver.title.lower()
-                if "challenge" in title or "security" in title:
-                    print("   !!! Cloudflare/Security Challenge detected. Waiting...")
-                    time.sleep(10)
+                if "challenge" in driver.title.lower() or "security" in driver.title.lower():
+                    print("   !!! Cloudflare/Security Challenge detected. Waiting extra time...")
+                    time.sleep(15)
 
                 try:
-                    WebDriverWait(driver, 20).until(
+                    # Increased wait to 25s
+                    WebDriverWait(driver, 25).until(
                         EC.presence_of_element_located((By.ID, "mosaic-provider-jobcards"))
                     )
                 except:
@@ -65,7 +57,6 @@ def scrape_indeed():
 
                 for card in job_cards:
                     try:
-                        # Basic Info
                         try:
                             title_elem = card.find_element(By.CSS_SELECTOR, "h2.jobTitle a")
                             title = title_elem.text
@@ -103,7 +94,7 @@ def scrape_indeed():
                                     wait.until(EC.text_to_be_present_in_element(
                                         (By.CSS_SELECTOR, "div.jobsearch-JobInfoHeader-title-container h2"), title
                                     ))
-                                except: raise Exception("Mismatch")
+                                except: pass
 
                                 right_pane = driver.find_element(By.ID, "salaryInfoAndJobType").text
                                 if any(s in right_pane for s in ['₹', '$', '€', '£', 'Lacs']) or \

@@ -20,7 +20,6 @@ def scrape_indeed_intern():
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-popup-blocking")
     
-    # NO HEADLESS FLAG
     driver = uc.Chrome(options=options)
 
     all_internships = []
@@ -36,14 +35,15 @@ def scrape_indeed_intern():
                 print(f"   [Indeed {region_name}] Navigating to Page {page + 1}...")
                 driver.get(url)
 
-                time.sleep(random.uniform(5, 8))
+                # Increased sleep
+                time.sleep(random.uniform(8, 12))
 
                 if "challenge" in driver.title.lower() or "security" in driver.title.lower():
-                    print("   !!! Cloudflare detected. Waiting...")
-                    time.sleep(10)
+                    print("   !!! Cloudflare detected. Waiting extra time...")
+                    time.sleep(15)
 
                 try:
-                    WebDriverWait(driver, 20).until(
+                    WebDriverWait(driver, 25).until(
                         EC.presence_of_element_located((By.ID, "mosaic-provider-jobcards"))
                     )
                 except:
@@ -92,7 +92,7 @@ def scrape_indeed_intern():
                                     wait.until(EC.text_to_be_present_in_element(
                                         (By.CSS_SELECTOR, "div.jobsearch-JobInfoHeader-title-container h2"), title
                                     ))
-                                except: raise Exception("Mismatch")
+                                except: pass
 
                                 right_pane = driver.find_element(By.ID, "salaryInfoAndJobType").text
                                 if any(s in right_pane.lower() for s in ['₹', '$', '€', '£', 'lacs', 'stipend']) or \

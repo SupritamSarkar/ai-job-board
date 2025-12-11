@@ -146,15 +146,33 @@ def scrape_internshala():
                             except:
                                 location = "Remote"
                     
-                    # Stipend - from span.stipend (as shown in screenshot)
+                    # Stipend - from .individual_internship_details .row-1-item span.stipend
                     stipend = ""
                     try:
-                        stipend = card.find_element(By.CSS_SELECTOR, "span.stipend").text.strip()
+                        # Try the exact path from HTML structure
+                        stipend = card.find_element(By.CSS_SELECTOR, ".individual_internship_details span.stipend").text.strip()
                     except:
                         try:
-                            stipend = card.find_element(By.CSS_SELECTOR, ".stipend").text.strip()
+                            stipend = card.find_element(By.CSS_SELECTOR, ".row-1-item span.stipend").text.strip()
                         except:
-                            stipend = "Not Disclosed"
+                            try:
+                                stipend = card.find_element(By.CSS_SELECTOR, "span.stipend").text.strip()
+                            except:
+                                try:
+                                    stipend = card.find_element(By.CSS_SELECTOR, ".stipend").text.strip()
+                                except:
+                                    try:
+                                        # Try getting from row-1-item that contains money icon
+                                        row_items = card.find_elements(By.CSS_SELECTOR, ".row-1-item")
+                                        for item in row_items:
+                                            try:
+                                                if item.find_element(By.CSS_SELECTOR, ".ic-16-money"):
+                                                    stipend = item.find_element(By.CSS_SELECTOR, "span").text.strip()
+                                                    break
+                                            except:
+                                                continue
+                                    except:
+                                        stipend = "Not Disclosed"
                     
                     # Duration - from the duration section
                     duration = ""

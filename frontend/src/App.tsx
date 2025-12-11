@@ -1,189 +1,597 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import JobCard from './components/JobCard';
-import type { Job }  from './types';
-import jobData from './jobs.json';
-import { Search, Filter, X } from 'lucide-react';
+import Sidebar from './components/Sidebar';
+import InternCard from './components/InternCard';
+import InternSidebar from './components/InternSidebar';
+import type { Job, Internship } from './types';
+import jobsData from './jobs.json';
+import internsData from './intern.json';
+import { Search, MapPin, Globe, Sparkles, X, Briefcase, GraduationCap } from 'lucide-react';
 
-const App: React.FC = () => {
-  const [allJobs] = useState<Job[]>(jobData as Job[]);
-  const [searchTerm, setSearchTerm] = useState("");
-  
-  // Filter States
-  const [showFilters, setShowFilters] = useState(false);
-  const [selectedWorkMode, setSelectedWorkMode] = useState<string[]>([]);
-  const [selectedExp, setSelectedExp] = useState<string[]>([]);
+// Filter out empty/invalid jobs
+const validJobs = (jobsData as Job[]).filter(job => job.Title && job.Company);
+const validInterns = (internsData as Internship[]).filter(intern => intern.Title && intern.Company);
 
-  // --- HELPER: Extract Minimum Experience from string ---
-  // Converts "0-5 Yrs" -> 0
-  // Converts "2-7 Yrs" -> 2
-  // Converts "Fresher" -> 0
-  const getMinExperience = (expString: string): number => {
-    const cleanStr = expString.toLowerCase();
-    if (cleanStr.includes('fresh')) return 0;
-    
-    // Find the first number in the string
-    const match = cleanStr.match(/(\d+)/);
-    return match ? parseInt(match[0], 10) : 0;
+function App() {
+  // Tab state: 'jobs' or 'internships'
+  const [activeTab, setActiveTab] = useState<'jobs' | 'internships'>('jobs');
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [internSearchTerm, setInternSearchTerm] = useState('');
+
+  // Job Filter State
+  const [filters, setFilters] = useState({
+    location: '',
+    experience: '',
+    isRemote: false,
+    site: 'All',
+    salaryDisclosed: false,
+    company: '',
+    daysAgo: '',
+    countryFilter: '' // 'USA' or 'India' or ''
+  });
+
+  // Internship Filter State
+  const [internFilters, setInternFilters] = useState({
+    location: '',
+    site: 'All',
+    salaryDisclosed: false,
+    company: '',
+    daysAgo: '',
+    isPaid: false,
+    countryFilter: '' // 'USA' or 'India' or ''
+  });
+
+  // Quick filter state for location (to track active state)
+  const [activeLocationFilter, setActiveLocationFilter] = useState<string | null>(null);
+  const [internActiveLocationFilter, setInternActiveLocationFilter] = useState<string | null>(null);
+
+  // Load Data
+  const [jobs] = useState<Job[]>(validJobs);
+  const [interns] = useState<Internship[]>(validInterns);
+
+  // Helper: Parse experience range from string like "2-5 Yrs" or "5+ Years"
+  const parseExperience = (expStr: string): { min: number; max: number } | null => {
+    if (!expStr || expStr === 'N/A') return null;
+
+    // Handle "X+ Years" format
+    const plusMatch = expStr.match(/(\d+)\+/);
+    if (plusMatch) {
+      return { min: parseInt(plusMatch[1]), max: 99 };
+    }
+
+    // Handle "X-Y Yrs" format
+    const rangeMatch = expStr.match(/(\d+)\s*[-–]\s*(\d+)/);
+    if (rangeMatch) {
+      return { min: parseInt(rangeMatch[1]), max: parseInt(rangeMatch[2]) };
+    }
+
+    // Handle single number
+    const singleMatch = expStr.match(/(\d+)/);
+    if (singleMatch) {
+      return { min: parseInt(singleMatch[1]), max: parseInt(singleMatch[1]) };
+    }
+
+    return null;
   };
 
-  // --- THE FILTERING LOGIC ---
+  // Helper: Check if job experience matches filter
+  const matchesExperience = (jobExp: string, filterExp: string): boolean => {
+    if (!filterExp) return true;
+
+    const jobRange = parseExperience(jobExp);
+    if (!jobRange) return filterExp === 'Fresher';
+
+    switch (filterExp) {
+      case 'Fresher':
+        return jobRange.min === 0 || jobRange.min === 1;
+      case '1-3':
+        return jobRange.min <= 3 && jobRange.max >= 1;
+      case '3-5':
+        return jobRange.min <= 5 && jobRange.max >= 3;
+      case '5-10':
+        return jobRange.min <= 10 && jobRange.max >= 5;
+      case '10+':
+        return jobRange.max >= 10;
+      default:
+        return true;
+    }
+  };
+
+  // Helper: Check if job was posted within X days
+  const isWithinDays = (dateStr: string, days: number): boolean => {
+    if (!days) return true;
+    const jobDate = new Date(dateStr.split(' ')[0]);
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - jobDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays <= days;
+  };
+
+  // Job Filtering Logic
   const filteredJobs = useMemo(() => {
-    return allJobs.filter(job => {
-      // 1. Search Filter
-      const searchLower = searchTerm.toLowerCase();
-      const matchesSearch = 
-        job.Title.toLowerCase().includes(searchLower) ||
-        job.Company.toLowerCase().includes(searchLower) ||
-        job.Description.toLowerCase().includes(searchLower);
+    return jobs.filter(job => {
+      // 1. Search Term
+      const matchesSearch =
+        searchTerm === '' ||
+        job.Title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        job.Company.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        job.Description.toLowerCase().includes(searchTerm.toLowerCase());
 
-      if (!matchesSearch) return false;
+      // 2. Location Filter
+      const matchesLocation =
+        filters.location === '' ||
+        job.Location.toLowerCase().includes(filters.location.toLowerCase());
 
-      // 2. Work Mode Filter
-      if (selectedWorkMode.length > 0) {
-        const jobText = (job.Location + job.Description).toLowerCase();
-        const matchesMode = selectedWorkMode.some(mode => {
-          if (mode === "Remote") return jobText.includes("remote");
-          if (mode === "Hybrid") return jobText.includes("hybrid");
-          if (mode === "On-site") return !jobText.includes("remote") && !jobText.includes("hybrid");
-          return false;
-        });
-        if (!matchesMode) return false;
-      }
+      // 3. Site Filter
+      const matchesSite =
+        filters.site === 'All' ||
+        job.Site.toLowerCase().includes(filters.site.toLowerCase());
 
-      // 3. Experience Filter (FIXED LOGIC)
-      if (selectedExp.length > 0) {
-        const jobMinExp = getMinExperience(job.Experience);
+      // 4. Remote Filter
+      const matchesRemote =
+        !filters.isRemote ||
+        job.Location.toLowerCase().includes('remote') ||
+        job.Description.toLowerCase().includes('remote') ||
+        job.Title.toLowerCase().includes('remote') ||
+        job.Location.toLowerCase().includes('hybrid');
 
-        // Check if the job matches ANY of the selected experience ranges
-        const matchesExp = selectedExp.some(filterTag => {
-          if (filterTag === "Fresher") return jobMinExp === 0; // Strictly 0 start
-          if (filterTag === "0-1 Years") return jobMinExp <= 1; // 0, 1 are okay
-          if (filterTag === "1-3 Years") return jobMinExp >= 1 && jobMinExp <= 3;
-          if (filterTag === "3-5 Years") return jobMinExp >= 3 && jobMinExp <= 5;
-          if (filterTag === "5+ Years") return jobMinExp >= 5;
-          return false;
-        });
-        
-        if (!matchesExp) return false;
-      }
+      // 5. Experience Filter
+      const matchesExp = matchesExperience(job.Experience, filters.experience);
 
-      return true;
+      // 6. Salary Disclosed Filter
+      const matchesSalary =
+        !filters.salaryDisclosed ||
+        (job.Salary !== 'Not Disclosed' && job.Salary !== '');
+
+      // 7. Company Filter
+      const matchesCompany =
+        filters.company === '' ||
+        job.Company.toLowerCase().includes(filters.company.toLowerCase());
+
+      // 8. Posted Within Filter
+      const matchesDays =
+        filters.daysAgo === '' ||
+        isWithinDays(job.Last_Updated, parseInt(filters.daysAgo));
+
+      // 9. Country Filter (USA/India based on Site attribute)
+      const matchesCountry = (() => {
+        if (!filters.countryFilter) return true;
+        const siteLower = job.Site.toLowerCase();
+        if (filters.countryFilter === 'USA') {
+          return siteLower.includes('usa');
+        } else if (filters.countryFilter === 'India') {
+          return siteLower.includes('india') || siteLower.includes('naukri');
+        }
+        return true;
+      })();
+
+      return matchesSearch && matchesLocation && matchesSite && matchesRemote &&
+        matchesExp && matchesSalary && matchesCompany && matchesDays && matchesCountry;
     });
-  }, [allJobs, searchTerm, selectedWorkMode, selectedExp]);
+  }, [jobs, searchTerm, filters]);
 
-  // Handler
-  const toggleFilter = (item: string, setFn: React.Dispatch<React.SetStateAction<string[]>>) => {
-    setFn(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]);
+  // Internship Filtering Logic
+  const filteredInterns = useMemo(() => {
+    return interns.filter(intern => {
+      // 1. Search Term
+      const matchesSearch =
+        internSearchTerm === '' ||
+        intern.Title.toLowerCase().includes(internSearchTerm.toLowerCase()) ||
+        intern.Company.toLowerCase().includes(internSearchTerm.toLowerCase()) ||
+        intern.Description.toLowerCase().includes(internSearchTerm.toLowerCase());
+
+      // 2. Location Filter
+      const matchesLocation =
+        internFilters.location === '' ||
+        intern.Location.toLowerCase().includes(internFilters.location.toLowerCase());
+
+      // 3. Site Filter
+      const matchesSite =
+        internFilters.site === 'All' ||
+        intern.Site.toLowerCase().includes(internFilters.site.toLowerCase());
+
+      // 4. Salary Disclosed Filter
+      const matchesSalary =
+        !internFilters.salaryDisclosed ||
+        (intern.Salary !== 'Not Disclosed' && intern.Salary !== '' && intern.Salary !== 'Unpaid');
+
+      // 5. Company Filter
+      const matchesCompany =
+        internFilters.company === '' ||
+        intern.Company.toLowerCase().includes(internFilters.company.toLowerCase());
+
+      // 6. Posted Within Filter
+      const matchesDays =
+        internFilters.daysAgo === '' ||
+        isWithinDays(intern.Last_Updated, parseInt(internFilters.daysAgo));
+
+      // 7. Paid Only Filter
+      const matchesPaid =
+        !internFilters.isPaid ||
+        (intern.Salary !== 'Unpaid' && intern.Salary !== 'Not Disclosed' && intern.Salary !== '');
+
+      // 8. Country Filter (USA/India based on Site attribute)
+      const matchesCountry = (() => {
+        if (!internFilters.countryFilter) return true;
+        const siteLower = intern.Site.toLowerCase();
+        if (internFilters.countryFilter === 'USA') {
+          return siteLower.includes('usa');
+        } else if (internFilters.countryFilter === 'India') {
+          return siteLower.includes('india') || siteLower.includes('naukri');
+        }
+        return true;
+      })();
+
+      return matchesSearch && matchesLocation && matchesSite && matchesSalary && matchesCompany && matchesDays && matchesPaid && matchesCountry;
+    });
+  }, [interns, internSearchTerm, internFilters]);
+
+  // Quick Filter Handlers - Jobs
+  const applyQuickFilter = (type: string) => {
+    if (type === 'Remote') {
+      setFilters(prev => ({ ...prev, isRemote: !prev.isRemote }));
+    } else if (type === 'USA') {
+      if (activeLocationFilter === 'USA') {
+        setActiveLocationFilter(null);
+        setFilters(prev => ({ ...prev, countryFilter: '' }));
+      } else {
+        setActiveLocationFilter('USA');
+        setFilters(prev => ({ ...prev, countryFilter: 'USA' }));
+      }
+    } else if (type === 'India') {
+      if (activeLocationFilter === 'India') {
+        setActiveLocationFilter(null);
+        setFilters(prev => ({ ...prev, countryFilter: '' }));
+      } else {
+        setActiveLocationFilter('India');
+        setFilters(prev => ({ ...prev, countryFilter: 'India' }));
+      }
+    }
+  };
+
+  // Quick Filter Handlers - Internships
+  const applyInternQuickFilter = (type: string) => {
+    if (type === 'Remote') {
+      setInternFilters(prev => ({ ...prev, location: prev.location.includes('Remote') ? '' : 'Remote' }));
+    } else if (type === 'USA') {
+      if (internActiveLocationFilter === 'USA') {
+        setInternActiveLocationFilter(null);
+        setInternFilters(prev => ({ ...prev, countryFilter: '' }));
+      } else {
+        setInternActiveLocationFilter('USA');
+        setInternFilters(prev => ({ ...prev, countryFilter: 'USA' }));
+      }
+    } else if (type === 'India') {
+      if (internActiveLocationFilter === 'India') {
+        setInternActiveLocationFilter(null);
+        setInternFilters(prev => ({ ...prev, countryFilter: '' }));
+      } else {
+        setInternActiveLocationFilter('India');
+        setInternFilters(prev => ({ ...prev, countryFilter: 'India' }));
+      }
+    }
+  };
+
+  // Clear All Filters - Jobs
+  const clearAllFilters = () => {
+    setSearchTerm('');
+    setActiveLocationFilter(null);
+    setFilters({
+      location: '',
+      experience: '',
+      isRemote: false,
+      site: 'All',
+      salaryDisclosed: false,
+      company: '',
+      daysAgo: '',
+      countryFilter: ''
+    });
+  };
+
+  // Clear All Filters - Internships
+  const clearAllInternFilters = () => {
+    setInternSearchTerm('');
+    setInternActiveLocationFilter(null);
+    setInternFilters({
+      location: '',
+      site: 'All',
+      salaryDisclosed: false,
+      company: '',
+      daysAgo: '',
+      isPaid: false,
+      countryFilter: ''
+    });
   };
 
   return (
-    <div className="min-h-screen bg-[#0d1117] font-sans text-gray-300 selection:bg-blue-900 selection:text-white flex flex-col">
-      
-      {/* HEADER */}
-      <header className="bg-[#161b22] border-b border-[#30363d] sticky top-0 z-50">
-        <div className="w-full px-6 h-16 flex items-center justify-between">
-          <div className="font-bold text-xl text-white tracking-tight flex items-center gap-2">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">AI</div>
-            <span>Jobs<span className="text-blue-500">.board</span></span>
-          </div>
-          
-          <div className="hidden md:flex flex-1 max-w-2xl mx-8 items-center bg-[#0d1117] rounded-xl px-4 py-2.5 border border-[#30363d] focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-900 transition-all">
-            <Search size={18} className="text-gray-500 mr-3" />
-            <input 
-              type="text" 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by role, company, or skill..." 
-              className="bg-transparent border-none outline-none text-sm w-full text-gray-200 placeholder-gray-600"
-            />
-            {searchTerm && <button onClick={() => setSearchTerm("")}><X size={16} /></button>}
+    <div className="min-h-screen bg-[#09090b] text-zinc-100 font-sans">
+
+      {/* Navbar */}
+      <nav className="border-b border-zinc-800/50 bg-[#09090b]/90 backdrop-blur-lg sticky top-0 z-50">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white">
+              <Sparkles className="h-4 w-4 text-black" />
+            </div>
+            <span className="text-xl font-bold tracking-tight">Job Finder</span>
           </div>
 
-          <div className="flex items-center gap-4">
-             <button 
-               onClick={() => setShowFilters(!showFilters)}
-               className={`flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg border transition-colors ${showFilters ? 'bg-blue-600 border-blue-500 text-white' : 'bg-[#21262d] border-[#30363d] text-gray-300 hover:bg-[#30363d]'}`}
-             >
-               <Filter size={16} />
-               Filters
-             </button>
+          {/* Tab Buttons in Navbar */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveTab('jobs')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'jobs'
+                ? 'bg-white text-black'
+                : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white'
+                }`}
+            >
+              <Briefcase className="h-4 w-4" />
+              Jobs
+            </button>
+            <button
+              onClick={() => setActiveTab('internships')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'internships'
+                ? 'bg-purple-500 text-white'
+                : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white'
+                }`}
+            >
+              <GraduationCap className="h-4 w-4" />
+              Internships
+            </button>
           </div>
         </div>
-      </header>
+      </nav>
 
-      <div className="flex flex-1 w-full relative">
-        
-        {/* SIDEBAR */}
-        {showFilters && (
-          <aside className="w-72 bg-[#161b22] border-r border-[#30363d] p-6 hidden md:block sticky top-16 h-[calc(100vh-64px)] overflow-y-auto">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="font-bold text-white">Filters</h2>
-              <button onClick={() => {setSelectedExp([]); setSelectedWorkMode([]);}} className="text-xs text-blue-400 hover:text-blue-300">Clear All</button>
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+
+        {/* === JOBS TAB === */}
+        {activeTab === 'jobs' && (
+          <>
+            {/* Header Section */}
+            <div className="mb-10 text-center md:text-left">
+              <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-white mb-2">
+                Find your next <span className="text-zinc-400">AI Challenge.</span>
+              </h1>
+
+              {/* Search Bar & Quick Filters Container */}
+              <div className="flex flex-col gap-4">
+
+                {/* Main Search Input */}
+                <div className="relative w-full md:max-w-2xl group">
+                  <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
+                    <Search className="h-5 w-5 text-zinc-500 group-focus-within:text-white transition-colors" />
+                  </div>
+                  <input
+                    type="text"
+                    className="block w-full rounded-xl border border-zinc-800 bg-zinc-900/60 py-4 pl-12 pr-12 text-zinc-200 placeholder-zinc-600 focus:border-zinc-600 focus:outline-none transition-all text-base"
+                    placeholder="Search by job title, company, or keywords..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                  {searchTerm && (
+                    <button
+                      onClick={() => setSearchTerm('')}
+                      className="absolute inset-y-0 right-0 flex items-center pr-4 text-zinc-500 hover:text-white transition-colors"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Quick Action Buttons */}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => applyQuickFilter('Remote')}
+                    className={`flex items-center gap-2 whitespace-nowrap rounded-full border px-4 py-2.5 text-sm font-medium transition-all duration-200 ${filters.isRemote
+                      ? 'bg-white text-black border-white'
+                      : 'border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:border-zinc-600 hover:text-white'
+                      }`}
+                  >
+                    <Globe className="h-4 w-4" /> Remote
+                  </button>
+                  <button
+                    onClick={() => applyQuickFilter('USA')}
+                    className={`flex items-center gap-2 whitespace-nowrap rounded-full border px-4 py-2.5 text-sm font-medium transition-all duration-200 ${activeLocationFilter === 'USA'
+                      ? 'bg-white text-black border-white'
+                      : 'border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:border-zinc-600 hover:text-white'
+                      }`}
+                  >
+                    <MapPin className="h-4 w-4" /> USA Jobs
+                  </button>
+                  <button
+                    onClick={() => applyQuickFilter('India')}
+                    className={`flex items-center gap-2 whitespace-nowrap rounded-full border px-4 py-2.5 text-sm font-medium transition-all duration-200 ${activeLocationFilter === 'India'
+                      ? 'bg-white text-black border-white'
+                      : 'border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:border-zinc-600 hover:text-white'
+                      }`}
+                  >
+                    <MapPin className="h-4 w-4" /> India Jobs
+                  </button>
+                </div>
+              </div>
             </div>
 
-            <div className="mb-6">
-              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Work Mode</h3>
-              {["Remote", "Hybrid", "On-site"].map(mode => (
-                <label key={mode} className="flex items-center gap-3 mb-2 cursor-pointer group">
-                  <input 
-                    type="checkbox" 
-                    className="accent-blue-600 w-4 h-4 rounded border-gray-600 bg-[#0d1117]"
-                    checked={selectedWorkMode.includes(mode)}
-                    onChange={() => toggleFilter(mode, setSelectedWorkMode)}
-                  />
-                  <span className="text-sm text-gray-400 group-hover:text-white transition-colors">{mode}</span>
-                </label>
-              ))}
-            </div>
+            {/* Content Layout */}
+            <div className="flex flex-col md:flex-row gap-8">
 
-            <div className="mb-6">
-              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Experience</h3>
-              {/* NOTE: These strings must match the logic inside filteredJobs exactly */}
-              {["Fresher", "0-1 Years", "1-3 Years", "3-5 Years", "5+ Years"].map(exp => (
-                <label key={exp} className="flex items-center gap-3 mb-2 cursor-pointer group">
-                   <input 
-                    type="checkbox" 
-                    className="accent-blue-600 w-4 h-4 rounded border-gray-600 bg-[#0d1117]"
-                    checked={selectedExp.includes(exp)}
-                    onChange={() => toggleFilter(exp, setSelectedExp)}
-                  />
-                  <span className="text-sm text-gray-400 group-hover:text-white transition-colors">
-                    {exp}
+              {/* Left Sidebar */}
+              <Sidebar
+                filters={filters}
+                setFilters={setFilters}
+                onClearFilters={clearAllFilters}
+                totalJobs={jobs.length}
+                filteredCount={filteredJobs.length}
+              />
+
+              {/* Right Job Grid */}
+              <div className="flex-1 min-w-0">
+                <div className="mb-6 flex items-center justify-between">
+                  <span className="text-sm text-zinc-500">
+                    Showing <span className="font-semibold text-white">{filteredJobs.length}</span> jobs
                   </span>
-                </label>
-              ))}
+                </div>
+
+                {filteredJobs.length > 0 ? (
+                  <div className="grid gap-5 sm:grid-cols-1 lg:grid-cols-2">
+                    {filteredJobs.map((job, index) => (
+                      <div
+                        key={`${job.Link}-${index}`}
+                        className="animate-fade-in"
+                        style={{ animationDelay: `${Math.min(index * 30, 300)}ms` }}
+                      >
+                        <JobCard job={job} />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex h-80 flex-col items-center justify-center rounded-xl border border-dashed border-zinc-800 bg-zinc-900/30 text-center px-6">
+                    <div className="w-16 h-16 rounded-full bg-zinc-800/50 flex items-center justify-center mb-4">
+                      <Search className="h-8 w-8 text-zinc-600" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-zinc-300 mb-1">No jobs found</h3>
+                    <p className="text-zinc-500 text-sm mb-4">Try adjusting your filters or search terms</p>
+                    <button
+                      onClick={clearAllFilters}
+                      className="rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-black transition-all hover:bg-zinc-200"
+                    >
+                      Clear all filters
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
-          </aside>
+          </>
         )}
 
-        {/* FEED */}
-        <main className="flex-1 p-6">
-          <div className="mb-4 flex items-center justify-between">
-            <h1 className="text-xl font-bold text-white">
-              {filteredJobs.length} <span className="text-gray-500 font-normal">Jobs Found</span>
-            </h1>
-          </div>
+        {/* === INTERNSHIPS TAB === */}
+        {activeTab === 'internships' && (
+          <>
+            {/* Header Section */}
+            <div className="mb-10 text-center md:text-left">
+              <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-white mb-2">
+                Find your next <span className="text-purple-400">Internship.</span>
+              </h1>
 
-          <div className={`grid gap-6 ${showFilters ? 'grid-cols-1 lg:grid-cols-2 xl:grid-cols-3' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'}`}>
-            {filteredJobs.length > 0 ? (
-              filteredJobs.map((job, index) => (
-                <JobCard key={index} job={job} />
-              ))
-            ) : (
-              <div className="col-span-full py-20 text-center border-2 border-dashed border-[#30363d] rounded-xl">
-                <p className="text-gray-500 text-lg">No jobs match your filters.</p>
-                <button 
-                  onClick={() => {setSearchTerm(""); setSelectedExp([]); setSelectedWorkMode([]);}}
-                  className="mt-4 text-blue-400 hover:underline"
-                >
-                  Clear all filters
-                </button>
+              {/* Search Bar & Quick Filters Container */}
+              <div className="flex flex-col gap-4">
+
+                {/* Main Search Input */}
+                <div className="relative w-full md:max-w-2xl group">
+                  <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
+                    <Search className="h-5 w-5 text-zinc-500 group-focus-within:text-purple-400 transition-colors" />
+                  </div>
+                  <input
+                    type="text"
+                    className="block w-full rounded-xl border border-purple-900/50 bg-zinc-900/60 py-4 pl-12 pr-12 text-zinc-200 placeholder-zinc-600 focus:border-purple-500 focus:outline-none transition-all text-base"
+                    placeholder="Search by internship title, company, or keywords..."
+                    value={internSearchTerm}
+                    onChange={(e) => setInternSearchTerm(e.target.value)}
+                  />
+                  {internSearchTerm && (
+                    <button
+                      onClick={() => setInternSearchTerm('')}
+                      className="absolute inset-y-0 right-0 flex items-center pr-4 text-zinc-500 hover:text-purple-400 transition-colors"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Quick Action Buttons */}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => applyInternQuickFilter('Remote')}
+                    className={`flex items-center gap-2 whitespace-nowrap rounded-full border px-4 py-2.5 text-sm font-medium transition-all duration-200 ${internFilters.location.includes('Remote')
+                      ? 'bg-purple-500 text-white border-purple-500'
+                      : 'border-purple-900/50 bg-zinc-900/50 text-zinc-400 hover:border-purple-500 hover:text-white'
+                      }`}
+                  >
+                    <Globe className="h-4 w-4" /> Remote
+                  </button>
+                  <button
+                    onClick={() => applyInternQuickFilter('USA')}
+                    className={`flex items-center gap-2 whitespace-nowrap rounded-full border px-4 py-2.5 text-sm font-medium transition-all duration-200 ${internActiveLocationFilter === 'USA'
+                      ? 'bg-purple-500 text-white border-purple-500'
+                      : 'border-purple-900/50 bg-zinc-900/50 text-zinc-400 hover:border-purple-500 hover:text-white'
+                      }`}
+                  >
+                    <MapPin className="h-4 w-4" /> USA Internships
+                  </button>
+                  <button
+                    onClick={() => applyInternQuickFilter('India')}
+                    className={`flex items-center gap-2 whitespace-nowrap rounded-full border px-4 py-2.5 text-sm font-medium transition-all duration-200 ${internActiveLocationFilter === 'India'
+                      ? 'bg-purple-500 text-white border-purple-500'
+                      : 'border-purple-900/50 bg-zinc-900/50 text-zinc-400 hover:border-purple-500 hover:text-white'
+                      }`}
+                  >
+                    <MapPin className="h-4 w-4" /> India Internships
+                  </button>
+                </div>
               </div>
-            )}
-          </div>
-        </main>
+            </div>
 
-      </div>
+            {/* Content Layout */}
+            <div className="flex flex-col md:flex-row gap-8">
+
+              {/* Left Sidebar */}
+              <InternSidebar
+                filters={internFilters}
+                setFilters={setInternFilters}
+                onClearFilters={clearAllInternFilters}
+                totalInterns={interns.length}
+                filteredCount={filteredInterns.length}
+              />
+
+              {/* Right Internship Grid */}
+              <div className="flex-1 min-w-0">
+                <div className="mb-6 flex items-center justify-between">
+                  <span className="text-sm text-zinc-500">
+                    Showing <span className="font-semibold text-purple-400">{filteredInterns.length}</span> internships
+                  </span>
+                </div>
+
+                {filteredInterns.length > 0 ? (
+                  <div className="grid gap-5 sm:grid-cols-1 lg:grid-cols-2">
+                    {filteredInterns.map((intern, index) => (
+                      <div
+                        key={`${intern.Link}-${index}`}
+                        className="animate-fade-in"
+                        style={{ animationDelay: `${Math.min(index * 30, 300)}ms` }}
+                      >
+                        <InternCard intern={intern} />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex h-80 flex-col items-center justify-center rounded-xl border border-dashed border-purple-900/50 bg-zinc-900/30 text-center px-6">
+                    <div className="w-16 h-16 rounded-full bg-purple-900/30 flex items-center justify-center mb-4">
+                      <Search className="h-8 w-8 text-purple-500" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-zinc-300 mb-1">No internships found</h3>
+                    <p className="text-zinc-500 text-sm mb-4">Try adjusting your filters or search terms</p>
+                    <button
+                      onClick={clearAllInternFilters}
+                      className="rounded-lg bg-purple-500 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-purple-600"
+                    >
+                      Clear all filters
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </main>
+
+      {/* Footer */}
+      <footer className="border-t border-zinc-800/50 mt-16 py-8">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center">
+          <p className="text-sm text-zinc-600">
+            © 2024 Polaris.ai • Powered by AI • All rights reserved
+          </p>
+        </div>
+      </footer>
     </div>
   );
 }

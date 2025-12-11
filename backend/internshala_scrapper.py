@@ -1,7 +1,7 @@
 """
 Internshala Internship Scraper
 Scrapes AI/ML internships from Internshala (7 pages)
-Updated CSS selectors to match current Internshala HTML structure
+Updated with correct CSS selectors from actual HTML structure
 """
 
 import time
@@ -58,45 +58,37 @@ def scrape_internshala():
             
             try:
                 WebDriverWait(driver, 15).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, ".individual_internship, .internship_meta, .internship-heading"))
+                    EC.presence_of_element_located((By.CSS_SELECTOR, ".individual_internship_details"))
                 )
             except:
                 print(f"   [Internshala] Timeout on page {page}")
                 continue
             
-            # Try multiple selectors for job cards
+            # Get all internship cards - based on the HTML structure
             job_cards = driver.find_elements(By.CSS_SELECTOR, ".individual_internship")
             if not job_cards:
                 job_cards = driver.find_elements(By.CSS_SELECTOR, ".internship_meta")
-            if not job_cards:
-                job_cards = driver.find_elements(By.CSS_SELECTOR, "[class*='internship']")
             
             page_count = 0
             for card in job_cards:
                 try:
-                    # Title - Try multiple selectors
+                    # Title - from the profile/heading section
                     title = ""
                     try:
-                        title = card.find_element(By.CSS_SELECTOR, ".job-internship-name a").text.strip()
+                        title = card.find_element(By.CSS_SELECTOR, ".profile h3 a").text.strip()
                     except:
                         try:
-                            title = card.find_element(By.CSS_SELECTOR, "h3 a").text.strip()
+                            title = card.find_element(By.CSS_SELECTOR, ".heading_4_5 a").text.strip()
                         except:
                             try:
-                                title = card.find_element(By.CSS_SELECTOR, ".profile a").text.strip()
+                                title = card.find_element(By.CSS_SELECTOR, "h3 a").text.strip()
                             except:
-                                try:
-                                    title = card.find_element(By.CSS_SELECTOR, "a.job-title-href").text.strip()
-                                except:
-                                    try:
-                                        title = card.find_element(By.CSS_SELECTOR, ".heading_4_5 a").text.strip()
-                                    except:
-                                        pass
+                                pass
                     
                     # Link
                     link = ""
                     try:
-                        link_elem = card.find_element(By.CSS_SELECTOR, ".job-internship-name a, h3 a, .profile a, a.job-title-href, .heading_4_5 a")
+                        link_elem = card.find_element(By.CSS_SELECTOR, ".profile h3 a, .heading_4_5 a, h3 a")
                         link = link_elem.get_attribute("href")
                         if link and link.startswith("/"):
                             link = "https://internshala.com" + link
@@ -109,68 +101,68 @@ def scrape_internshala():
                         except:
                             continue
                     
-                    # Skip if no title or link
-                    if not title and not link:
+                    if not link:
                         continue
                     
-                    # If no title but have link, extract from link
+                    # If no title, extract from URL
                     if not title and link:
-                        # Extract title from URL: /internship/detail/work-from-home-machine-learning-internship-at-...
                         try:
                             parts = link.split("/detail/")[1].split("-at-")[0]
                             title = parts.replace("-", " ").title()
+                            # Clean up common prefixes
+                            title = title.replace("Work From Home ", "")
+                            title = title.replace("Part Time ", "")
                         except:
                             title = "See Link"
                     
-                    # Company
+                    # Company - from p.company-name (as shown in screenshot)
                     company = ""
                     try:
-                        company = card.find_element(By.CSS_SELECTOR, ".company_name a, .company-name a, .company a").text.strip()
+                        company = card.find_element(By.CSS_SELECTOR, "p.company-name").text.strip()
                     except:
                         try:
-                            company = card.find_element(By.CSS_SELECTOR, ".company_name, .company-name, .company").text.strip()
+                            company = card.find_element(By.CSS_SELECTOR, ".heading_6.company_name p").text.strip()
                         except:
                             try:
-                                company = card.find_element(By.CSS_SELECTOR, "p.company_name").text.strip()
+                                company = card.find_element(By.CSS_SELECTOR, ".company_and_premium p").text.strip()
                             except:
-                                # Try to extract from link
+                                # Extract from URL
                                 try:
                                     parts = link.split("-at-")[1].split("1")[0]
                                     company = parts.replace("-", " ").title()
                                 except:
                                     company = "N/A"
                     
-                    # Clean company name
-                    if company:
-                        company = company.replace("\nActively hiring", "").strip()
-                    
-                    # Location
+                    # Location - from .row-1-item.locations span a
                     location = ""
                     try:
-                        location = card.find_element(By.CSS_SELECTOR, ".location_link, .locations a, .location a").text.strip()
+                        location = card.find_element(By.CSS_SELECTOR, ".row-1-item.locations span a").text.strip()
                     except:
                         try:
-                            location = card.find_element(By.CSS_SELECTOR, "#location_names span, .location span").text.strip()
+                            location = card.find_element(By.CSS_SELECTOR, ".locations a").text.strip()
                         except:
                             try:
-                                location = card.find_element(By.CSS_SELECTOR, "[class*='location']").text.strip()
+                                location = card.find_element(By.CSS_SELECTOR, "#location_names a").text.strip()
                             except:
                                 location = "Remote"
                     
-                    # Stipend
+                    # Stipend - from span.stipend (as shown in screenshot)
                     stipend = ""
                     try:
-                        stipend = card.find_element(By.CSS_SELECTOR, ".stipend, .salary, .stipend_container_text").text.strip()
+                        stipend = card.find_element(By.CSS_SELECTOR, "span.stipend").text.strip()
                     except:
                         try:
-                            stipend = card.find_element(By.CSS_SELECTOR, "[class*='stipend']").text.strip()
+                            stipend = card.find_element(By.CSS_SELECTOR, ".stipend").text.strip()
                         except:
                             stipend = "Not Disclosed"
                     
-                    # Duration
+                    # Duration - from the duration section
                     duration = ""
                     try:
-                        duration = card.find_element(By.CSS_SELECTOR, ".duration, [class*='duration']").text.strip()
+                        # Duration is in row-1-item after stipend
+                        duration_elem = card.find_elements(By.CSS_SELECTOR, ".row-1-item")
+                        if len(duration_elem) >= 3:
+                            duration = duration_elem[2].text.strip()
                     except:
                         duration = "N/A"
                     
@@ -196,7 +188,7 @@ def scrape_internshala():
     finally:
         driver.quit()
     
-    # Remove duplicates and entries without links
+    # Remove duplicates
     seen_links = set()
     unique_internships = []
     for intern in internships:

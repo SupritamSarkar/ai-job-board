@@ -34,7 +34,7 @@ jobs:
       # 3. Install Python Dependencies
       - name: Install Dependencies
         run: |
-          pip install selenium webdriver-manager seleniumbase
+          pip install selenium webdriver-manager requests
 
       # 4. Run Scraper with Virtual Display
       # xvfb-run --auto-servernum creates a fake screen so we can run Chrome WITHOUT 'headless' mode

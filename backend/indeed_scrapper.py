@@ -1,46 +1,35 @@
 import time
 import random
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from datetime import datetime
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 
-# NEW IMPORT
-from selenium_stealth import stealth
-
+# Regions
 REGIONS = [
     ("India", "https://in.indeed.com/jobs?q=ai+ml+engineer&l="),
     ("USA",   "https://www.indeed.com/jobs?q=ai+ml+engineer&l=") 
 ]
 
 def scrape_indeed():
-    print(f"[{datetime.now()}] Starting Indeed Scrape (Stealth Mode)...")
+    print(f"[{datetime.now()}] Starting Indeed Scrape (Xvfb Mode)...")
 
-    options = Options()
-    options.add_argument("--headless=new")
-    options.add_argument("start-maximized")
-    options.add_argument("--window-size=1920,1080")
+    # Standard options for UC
+    options = uc.ChromeOptions()
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option('useAutomationExtension', False)
-
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-
-    # --- ACTIVATE STEALTH MODE ---
-    stealth(driver,
-        languages=["en-US", "en"],
-        vendor="Google Inc.",
-        platform="Win32",
-        webgl_vendor="Intel Inc.",
-        renderer="Intel Iris OpenGL Engine",
-        fix_hairline=True,
-    )
+    options.add_argument("--disable-popup-blocking")
+    
+    # IMPORTANT: Do NOT use --headless. 
+    # Xvfb provides the display, so Chrome thinks it's running visibly.
+    
+    # Force version to ensure compatibility in CI
+    driver = uc.Chrome(options=options, version_main=119) 
+    # Note: If 119 fails, removing version_main usually works in GitHub Actions 
+    # as uc downloads the latest patch automatically. 
+    # Let's try WITHOUT version_main first as GitHub updates Chrome frequently.
+    driver = uc.Chrome(options=options)
 
     all_jobs = []
 
@@ -55,19 +44,20 @@ def scrape_indeed():
                 print(f"   [Indeed {region_name}] Navigating to Page {page + 1}...")
                 driver.get(url)
 
-                # Increased sleep slightly for safety
-                time.sleep(random.uniform(4, 7))
+                time.sleep(random.uniform(5, 8))
 
-                if "challenge" in driver.title.lower() or "security" in driver.title.lower():
-                    print("   !!! Cloudflare detected. Skipping page.")
-                    continue
+                # Check for challenges
+                title = driver.title.lower()
+                if "challenge" in title or "security" in title:
+                    print("   !!! Cloudflare/Security Challenge detected. Waiting...")
+                    time.sleep(10)
 
                 try:
-                    WebDriverWait(driver, 10).until(
+                    WebDriverWait(driver, 20).until(
                         EC.presence_of_element_located((By.ID, "mosaic-provider-jobcards"))
                     )
                 except:
-                    print(f"   Timeout on {region_name} page {page+1} (Blocked)")
+                    print(f"   Timeout on {region_name} page {page+1}")
                     continue
 
                 job_cards = driver.find_elements(By.CLASS_NAME, "job_seen_beacon")
@@ -75,17 +65,16 @@ def scrape_indeed():
 
                 for card in job_cards:
                     try:
+                        # Basic Info
                         try:
                             title_elem = card.find_element(By.CSS_SELECTOR, "h2.jobTitle a")
                             title = title_elem.text
                             link = title_elem.get_attribute("href")
                         except:
-                            try:
-                                title_elem = card.find_element(By.CSS_SELECTOR, "h2.jobTitle span")
-                                title = title_elem.text
-                                link = card.find_element(By.XPATH, ".//a").get_attribute("href")
-                            except:
-                                continue
+                            title_elem = card.find_element(By.CSS_SELECTOR, "h2.jobTitle span")
+                            title = title_elem.text
+                            try: link = card.find_element(By.XPATH, ".//a").get_attribute("href")
+                            except: link = driver.current_url
 
                         try: company = card.find_element(By.CSS_SELECTOR, "[data-testid='company-name']").text
                         except: company = "N/A"
@@ -94,8 +83,8 @@ def scrape_indeed():
                         except: location = "N/A"
 
                         salary = "Not Disclosed"
-                        
-                        # Metadata check
+
+                        # Metadata Check
                         try:
                             metadata = card.find_elements(By.CLASS_NAME, "metadata")
                             for m in metadata:
@@ -105,12 +94,17 @@ def scrape_indeed():
                                     break
                         except: pass
 
-                        # Click check
+                        # Right Pane Check
                         if salary == "Not Disclosed":
                             try:
-                                driver.execute_script("arguments[0].scrollIntoView();", card)
-                                driver.execute_script("arguments[0].click();", card)
-                                time.sleep(2)
+                                card.click()
+                                try:
+                                    wait = WebDriverWait(driver, 5)
+                                    wait.until(EC.text_to_be_present_in_element(
+                                        (By.CSS_SELECTOR, "div.jobsearch-JobInfoHeader-title-container h2"), title
+                                    ))
+                                except: raise Exception("Mismatch")
+
                                 right_pane = driver.find_element(By.ID, "salaryInfoAndJobType").text
                                 if any(s in right_pane for s in ['₹', '$', '€', '£', 'Lacs']) or \
                                    (any(c.isdigit() for c in right_pane) and "year" in right_pane.lower()):
@@ -130,7 +124,8 @@ def scrape_indeed():
                         })
                     except: continue
     finally:
-        driver.quit()
+        try: driver.quit()
+        except: pass
 
     print(f"   [Indeed] Total Found: {len(all_jobs)} jobs.")
     return all_jobs

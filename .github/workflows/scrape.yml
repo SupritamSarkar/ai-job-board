@@ -23,16 +23,23 @@ jobs:
         with:
           python-version: '3.10'
 
+      # 1. Install Google Chrome
       - name: Setup Chrome
         uses: browser-actions/setup-chrome@latest
 
-      - name: Install Dependencies
-        # ADDED selenium-stealth HERE
-        run: |
-          pip install selenium webdriver-manager selenium-stealth
+      # 2. Install Xvfb (Virtual Display)
+      - name: Install Xvfb
+        run: sudo apt-get install -y xvfb
 
+      # 3. Install Python Dependencies
+      - name: Install Dependencies
+        run: |
+          pip install selenium webdriver-manager undetected-chromedriver
+
+      # 4. Run Scraper with Virtual Display
+      # xvfb-run --auto-servernum creates a fake screen so we can run Chrome WITHOUT 'headless' mode
       - name: Run Master Scraper
-        run: python backend/master_all_scrapper.py
+        run: xvfb-run --auto-servernum python backend/master_all_scrapper.py
 
       - name: Commit and Push Changes
         run: |

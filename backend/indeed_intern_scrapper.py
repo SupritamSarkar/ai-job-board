@@ -16,11 +16,16 @@ def scrape_indeed_intern():
     print(f"[{datetime.now()}] Starting Indeed Internship Scrape...")
 
     options = uc.ChromeOptions()
-    # options.add_argument("--headless") # Keep headless OFF
+    # CRITICAL FIX FOR GITHUB ACTIONS:
+    options.add_argument("--headless=new") 
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-popup-blocking")
     
-    # Force Version 142
-    driver = uc.Chrome(options=options, version_main=142)
+    # Remove strict version constraint for CI
+    driver = uc.Chrome(options=options)
 
     all_internships = []
 

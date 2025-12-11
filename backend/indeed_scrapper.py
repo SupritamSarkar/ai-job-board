@@ -16,11 +16,20 @@ def scrape_indeed():
     print(f"[{datetime.now()}] Starting Indeed Scrape...")
 
     options = uc.ChromeOptions()
-    # options.add_argument("--headless") # Headless OFF for Indeed
+    # CRITICAL FIX FOR GITHUB ACTIONS:
+    # 1. Headless must be ON for Linux servers (no GUI)
+    options.add_argument("--headless=new") 
+    # 2. These flags are required for Docker/CI environments
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-popup-blocking")
 
-    # Force Version 142
-    driver = uc.Chrome(options=options, version_main=142)
+    # Let uc handle versioning automatically in CI (remove version_main constraint)
+    # or keep it if you are sure about the Chrome version in the runner.
+    # Usually, it's safer to remove version_main in CI.
+    driver = uc.Chrome(options=options)
 
     all_jobs = []
 
@@ -79,7 +88,6 @@ def scrape_indeed():
                             metadata = card.find_elements(By.CLASS_NAME, "metadata")
                             for m in metadata:
                                 text = m.text
-                                # FIX 1: Direct Currency Check on Card
                                 if any(symbol in text for symbol in ['₹', '$', '€', '£', 'Lacs']):
                                     salary = text
                                     break
@@ -90,27 +98,20 @@ def scrape_indeed():
                             try:
                                 card.click()
                                 
-                                # Prevent Stale Data: Wait for Right Pane Title to match Card Title
                                 try:
                                     wait = WebDriverWait(driver, 5)
                                     wait.until(EC.text_to_be_present_in_element(
                                         (By.CSS_SELECTOR, "div.jobsearch-JobInfoHeader-title-container h2"), title
                                     ))
                                 except:
-                                    # If title doesn't match, the click probably failed or pane didn't load
                                     raise Exception("Right pane mismatch")
 
-                                # Extract text from the shared Salary/JobType container
                                 right_pane_text = driver.find_element(By.ID, "salaryInfoAndJobType").text
                                 
-                                # FIX 2: The Logic You Requested
-                                # If the text contains '$' or '₹', we FORCE it to be the salary.
-                                # This captures "$150,000 - $230,000 - Full Time" perfectly.
                                 currency_indicators = ['$', '₹', '€', '£', 'Lacs']
                                 
                                 if any(symbol in right_pane_text for symbol in currency_indicators):
                                     salary = right_pane_text
-                                # Fallback: If no symbol, but has digits + "Year"/"Month" (e.g. "60,000 a year")
                                 elif any(char.isdigit() for char in right_pane_text) and \
                                      any(period in right_pane_text.lower() for period in ['year', 'month', 'pa']):
                                      salary = right_pane_text

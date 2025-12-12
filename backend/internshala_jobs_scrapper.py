@@ -1,16 +1,15 @@
 """
 Internshala Jobs Scraper (Fresher Jobs)
-Scrapes AI/ML/Tech jobs from Internshala's Jobs section (7 pages)
-Since Internshala internship scraper works, this should work too!
+FAST version - uses parallel processing to visit detail pages
 """
 
 import time
 import random
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from datetime import datetime
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
@@ -23,6 +22,9 @@ def get_driver():
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.page_load_strategy = 'eager'  # Don't wait for all resources
     
     user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     chrome_options.add_argument(f'user-agent={user_agent}')
@@ -33,142 +35,161 @@ def get_driver():
 
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    driver.set_page_load_timeout(15)
     
     return driver
 
 
+def extract_job_from_detail_page(url):
+    """Extract job details from detail page - each call creates its own driver"""
+    driver = None
+    try:
+        driver = get_driver()
+        driver.get(url)
+        time.sleep(1)  # Reduced wait time
+        
+        data = {
+            "Title": "",
+            "Company": "",
+            "Location": "",
+            "Salary": "Not Disclosed",
+            "Experience": "Fresher",
+            "Link": url
+        }
+        
+        # Title
+        try:
+            title_elem = driver.find_element(By.CSS_SELECTOR, ".heading_4_5.profile_heading, h1.heading_4_5, .profile_heading")
+            data["Title"] = title_elem.text.strip()
+        except:
+            try:
+                title_elem = driver.find_element(By.CSS_SELECTOR, "h1")
+                data["Title"] = title_elem.text.strip().replace(" - Job", "")
+            except:
+                pass
+        
+        # Company
+        try:
+            company_elem = driver.find_element(By.CSS_SELECTOR, ".company_name a, .company_name")
+            data["Company"] = company_elem.text.strip()
+        except:
+            pass
+        
+        # Location
+        try:
+            loc_elem = driver.find_element(By.CSS_SELECTOR, "#location_names a, .location_link, [id*='location']")
+            data["Location"] = loc_elem.text.strip()
+        except:
+            pass
+        
+        # Salary/CTC
+        try:
+            salary_elem = driver.find_element(By.CSS_SELECTOR, ".salary_container .salary, .salary, .stipend")
+            data["Salary"] = salary_elem.text.strip()
+        except:
+            try:
+                page_text = driver.find_element(By.TAG_NAME, "body").text
+                salary_match = re.search(r'₹\s*[\d,]+\s*(?:-\s*[\d,]+)?\s*(?:/year|/month|LPA)?', page_text)
+                if salary_match:
+                    data["Salary"] = salary_match.group().strip()
+            except:
+                pass
+        
+        # Experience
+        try:
+            page_text = driver.find_element(By.TAG_NAME, "body").text
+            exp_match = re.search(r'(\d+)\s*(?:-\s*(\d+))?\s*(?:year|years)', page_text, re.IGNORECASE)
+            if exp_match:
+                data["Experience"] = exp_match.group()
+        except:
+            pass
+        
+        return data
+        
+    except Exception as e:
+        return {"Title": "", "Link": url}
+    finally:
+        if driver:
+            driver.quit()
+
+
 def scrape_internshala_jobs():
-    """Scrape AI/ML/Tech jobs from Internshala Jobs section (7 pages)"""
-    print(f"[{datetime.now()}] Starting Internshala Jobs Scrape...")
+    """Scrape AI/ML/Tech jobs from Internshala - FAST parallel version"""
+    print(f"[{datetime.now()}] Starting Internshala Jobs Scrape (FAST Mode)...")
     
     jobs = []
     driver = get_driver()
     
-    # URLs for different job categories on Internshala
     job_urls = [
         ("Data Science", "https://internshala.com/fresher-jobs/data-science-jobs/"),
         ("Machine Learning", "https://internshala.com/fresher-jobs/machine-learning-jobs/"),
-        ("Software Development", "https://internshala.com/fresher-jobs/software-development-jobs/"),
     ]
     
     try:
+        # First, collect all job links (fast - single driver)
+        all_links = []
+        
         for category, base_url in job_urls:
-            for page in range(1, 8):  # 7 pages per category
+            for page in range(1, 5):  # 4 pages
                 if page == 1:
                     url = base_url
                 else:
                     url = f"{base_url}page-{page}/"
                 
-                print(f"   [Internshala Jobs] Scraping {category} - Page {page}...")
+                print(f"   [Internshala Jobs] Collecting {category} links from Page {page}...")
                 driver.get(url)
+                time.sleep(2)
                 
-                time.sleep(random.uniform(2, 4))
+                # Quick scroll
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(1)
+                
+                # Get all job links
+                link_elems = driver.find_elements(By.CSS_SELECTOR, "a[href*='/job/detail/']")
+                for elem in link_elems:
+                    href = elem.get_attribute("href")
+                    if href and href not in all_links:
+                        all_links.append(href)
+        
+        driver.quit()
+        print(f"\n   [Internshala Jobs] Found {len(all_links)} unique links. Starting parallel scrape...")
+        
+        # Parallel scraping with 5 workers
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {executor.submit(extract_job_from_detail_page, link): link for link in all_links}
+            
+            completed = 0
+            for future in as_completed(futures):
+                completed += 1
+                if completed % 10 == 0:
+                    print(f"   [Internshala Jobs] Processed {completed}/{len(all_links)}...")
                 
                 try:
-                    WebDriverWait(driver, 15).until(
-                        EC.presence_of_element_located((By.CLASS_NAME, "individual_job"))
-                    )
+                    data = future.result()
+                    if data and data.get("Title"):
+                        jobs.append({
+                            "Title": data["Title"],
+                            "Company": data.get("Company", "N/A"),
+                            "Experience": data.get("Experience", "Fresher"),
+                            "Location": data.get("Location", "N/A"),
+                            "Description": "Fresher Job",
+                            "Salary": data.get("Salary", "Not Disclosed"),
+                            "Link": data["Link"],
+                            "Site": "Internshala Jobs",
+                            "Last_Updated": str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                        })
                 except:
-                    # Try alternate class name
-                    try:
-                        WebDriverWait(driver, 10).until(
-                            EC.presence_of_element_located((By.CLASS_NAME, "job-tile"))
-                        )
-                    except:
-                        print(f"   [Internshala Jobs] Timeout on {category} page {page}")
-                        continue
-                
-                # Try multiple selectors for job cards
-                job_cards = driver.find_elements(By.CLASS_NAME, "individual_job")
-                if not job_cards:
-                    job_cards = driver.find_elements(By.CLASS_NAME, "job-tile")
-                if not job_cards:
-                    job_cards = driver.find_elements(By.CSS_SELECTOR, ".job-listing-card")
-                
-                for card in job_cards:
-                    try:
-                        # Title & Link
-                        try:
-                            title_elem = card.find_element(By.CSS_SELECTOR, "a.job-title-href")
-                        except:
-                            try:
-                                title_elem = card.find_element(By.CSS_SELECTOR, "a.job_title")
-                            except:
-                                title_elem = card.find_element(By.CSS_SELECTOR, "h3 a")
-                        
-                        title = title_elem.text.strip()
-                        href = title_elem.get_attribute("href")
-                        link = "https://internshala.com" + href if href.startswith("/") else href
-                        
-                        # Company
-                        try:
-                            company = card.find_element(By.CLASS_NAME, "company_name").text.strip()
-                        except:
-                            try:
-                                company = card.find_element(By.CSS_SELECTOR, ".company-name").text.strip()
-                            except:
-                                company = "N/A"
-                        
-                        # Location
-                        try:
-                            location = card.find_element(By.CSS_SELECTOR, "a.location_link").text.strip()
-                        except:
-                            try:
-                                location = card.find_element(By.CLASS_NAME, "location").text.strip()
-                            except:
-                                location = "N/A"
-                        
-                        # Salary
-                        try:
-                            salary = card.find_element(By.CLASS_NAME, "salary").text.strip()
-                        except:
-                            try:
-                                salary = card.find_element(By.CSS_SELECTOR, ".stipend").text.strip()
-                            except:
-                                salary = "Not Disclosed"
-                        
-                        # Experience
-                        try:
-                            experience = card.find_element(By.CLASS_NAME, "experience").text.strip()
-                        except:
-                            experience = "Fresher"
-                        
-                        if title and link:
-                            jobs.append({
-                                "Title": title,
-                                "Company": company,
-                                "Experience": experience,
-                                "Location": location,
-                                "Description": f"Category: {category}",
-                                "Salary": salary,
-                                "Link": link,
-                                "Site": "Internshala Jobs",
-                                "Last_Updated": str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                            })
-                    except:
-                        continue
-                
-                print(f"   [Internshala Jobs] Page {page}: {len(job_cards)} jobs found")
-                
+                    continue
+            
     except Exception as e:
         print(f"   [Internshala Jobs] Error: {e}")
-    finally:
-        driver.quit()
+        if driver:
+            driver.quit()
     
-    # Remove duplicates
-    seen_links = set()
-    unique_jobs = []
-    for job in jobs:
-        if job['Link'] not in seen_links:
-            seen_links.add(job['Link'])
-            unique_jobs.append(job)
-    
-    print(f"   [Internshala Jobs] Total Found: {len(unique_jobs)} jobs.")
-    return unique_jobs
+    print(f"   [Internshala Jobs] Total Found: {len(jobs)} jobs.")
+    return jobs
 
 
 if __name__ == "__main__":
+    import json
     jobs = scrape_internshala_jobs()
-    print(f"\n=== Scraped {len(jobs)} jobs ===")
-    for job in jobs[:5]:
-        print(f"  - {job['Title']} at {job['Company']} ({job['Salary']})")

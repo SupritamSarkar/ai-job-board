@@ -24,6 +24,8 @@ function App() {
     location: '',
     experience: '',
     isRemote: false,
+    isHybrid: false,
+    isOnsite: false,
     site: 'All',
     salaryDisclosed: false,
     company: '',
@@ -39,6 +41,9 @@ function App() {
     company: '',
     daysAgo: '',
     isPaid: false,
+    isRemote: false,
+    isHybrid: false,
+    isOnsite: false,
     countryFilter: '' // 'USA' or 'India' or ''
   });
 
@@ -128,13 +133,35 @@ function App() {
         filters.site === 'All' ||
         job.Site.toLowerCase().includes(filters.site.toLowerCase());
 
-      // 4. Remote Filter
+      // 4. Remote Filter (includes work from home)
+      const locationLower = job.Location.toLowerCase();
+      const descLower = job.Description.toLowerCase();
+      const titleLower = job.Title.toLowerCase();
+
       const matchesRemote =
         !filters.isRemote ||
-        job.Location.toLowerCase().includes('remote') ||
-        job.Description.toLowerCase().includes('remote') ||
-        job.Title.toLowerCase().includes('remote') ||
-        job.Location.toLowerCase().includes('hybrid');
+        locationLower.includes('remote') ||
+        locationLower.includes('work from home') ||
+        descLower.includes('remote') ||
+        descLower.includes('work from home') ||
+        titleLower.includes('remote');
+
+      // 4b. Hybrid Filter
+      const matchesHybrid =
+        !filters.isHybrid ||
+        locationLower.includes('hybrid') ||
+        descLower.includes('hybrid');
+
+      // 4c. Onsite Filter
+      const matchesOnsite =
+        !filters.isOnsite ||
+        (!locationLower.includes('remote') &&
+          !locationLower.includes('work from home') &&
+          !locationLower.includes('hybrid')) ||
+        locationLower.includes('onsite') ||
+        locationLower.includes('on-site') ||
+        descLower.includes('onsite') ||
+        descLower.includes('on-site');
 
       // 5. Experience Filter
       const matchesExp = matchesExperience(job.Experience, filters.experience);
@@ -155,18 +182,20 @@ function App() {
         isWithinDays(job.Last_Updated, parseInt(filters.daysAgo));
 
       // 9. Country Filter (USA/India based on Site attribute)
+      // USA jobs: AIJobs.ai, Dice
+      // India jobs: Naukri, Internshala
       const matchesCountry = (() => {
         if (!filters.countryFilter) return true;
         const siteLower = job.Site.toLowerCase();
         if (filters.countryFilter === 'USA') {
-          return siteLower.includes('usa');
+          return siteLower.includes('aijobs') || siteLower.includes('dice');
         } else if (filters.countryFilter === 'India') {
-          return siteLower.includes('india') || siteLower.includes('naukri');
+          return siteLower.includes('naukri') || siteLower.includes('internshala');
         }
         return true;
       })();
 
-      return matchesSearch && matchesLocation && matchesSite && matchesRemote &&
+      return matchesSearch && matchesLocation && matchesSite && matchesRemote && matchesHybrid && matchesOnsite &&
         matchesExp && matchesSalary && matchesCompany && matchesDays && matchesCountry;
     });
   }, [jobs, searchTerm, filters]);
@@ -211,19 +240,47 @@ function App() {
         !internFilters.isPaid ||
         (intern.Salary !== 'Unpaid' && intern.Salary !== 'Not Disclosed' && intern.Salary !== '');
 
-      // 8. Country Filter (USA/India based on Site attribute)
+      // 8. Remote Filter (includes work from home) - Internships
+      const locationLower = intern.Location.toLowerCase();
+      const descLower = intern.Description.toLowerCase();
+
+      const matchesRemote =
+        !internFilters.isRemote ||
+        locationLower.includes('remote') ||
+        locationLower.includes('work from home') ||
+        descLower.includes('remote') ||
+        descLower.includes('work from home');
+
+      // 8b. Hybrid Filter - Internships
+      const matchesHybrid =
+        !internFilters.isHybrid ||
+        locationLower.includes('hybrid') ||
+        descLower.includes('hybrid');
+
+      // 8c. Onsite Filter - Internships
+      const matchesOnsite =
+        !internFilters.isOnsite ||
+        (!locationLower.includes('remote') &&
+          !locationLower.includes('work from home') &&
+          !locationLower.includes('hybrid')) ||
+        locationLower.includes('onsite') ||
+        locationLower.includes('on-site');
+
+      // 9. Country Filter (USA/India based on Site attribute)
+      // USA internships: AIJobs.ai, Dice (if any)
+      // India internships: Naukri, Internshala
       const matchesCountry = (() => {
         if (!internFilters.countryFilter) return true;
         const siteLower = intern.Site.toLowerCase();
         if (internFilters.countryFilter === 'USA') {
-          return siteLower.includes('usa');
+          return siteLower.includes('aijobs') || siteLower.includes('dice');
         } else if (internFilters.countryFilter === 'India') {
-          return siteLower.includes('india') || siteLower.includes('naukri');
+          return siteLower.includes('naukri') || siteLower.includes('internshala');
         }
         return true;
       })();
 
-      return matchesSearch && matchesLocation && matchesSite && matchesSalary && matchesCompany && matchesDays && matchesPaid && matchesCountry;
+      return matchesSearch && matchesLocation && matchesSite && matchesSalary && matchesCompany && matchesDays && matchesPaid && matchesRemote && matchesHybrid && matchesOnsite && matchesCountry;
     });
   }, [interns, internSearchTerm, internFilters]);
 
@@ -231,6 +288,10 @@ function App() {
   const applyQuickFilter = (type: string) => {
     if (type === 'Remote') {
       setFilters(prev => ({ ...prev, isRemote: !prev.isRemote }));
+    } else if (type === 'Hybrid') {
+      setFilters(prev => ({ ...prev, isHybrid: !prev.isHybrid }));
+    } else if (type === 'Onsite') {
+      setFilters(prev => ({ ...prev, isOnsite: !prev.isOnsite }));
     } else if (type === 'USA') {
       if (activeLocationFilter === 'USA') {
         setActiveLocationFilter(null);
@@ -253,7 +314,11 @@ function App() {
   // Quick Filter Handlers - Internships
   const applyInternQuickFilter = (type: string) => {
     if (type === 'Remote') {
-      setInternFilters(prev => ({ ...prev, location: prev.location.includes('Remote') ? '' : 'Remote' }));
+      setInternFilters(prev => ({ ...prev, isRemote: !prev.isRemote }));
+    } else if (type === 'Hybrid') {
+      setInternFilters(prev => ({ ...prev, isHybrid: !prev.isHybrid }));
+    } else if (type === 'Onsite') {
+      setInternFilters(prev => ({ ...prev, isOnsite: !prev.isOnsite }));
     } else if (type === 'USA') {
       if (internActiveLocationFilter === 'USA') {
         setInternActiveLocationFilter(null);
@@ -281,6 +346,8 @@ function App() {
       location: '',
       experience: '',
       isRemote: false,
+      isHybrid: false,
+      isOnsite: false,
       site: 'All',
       salaryDisclosed: false,
       company: '',
@@ -300,6 +367,9 @@ function App() {
       company: '',
       daysAgo: '',
       isPaid: false,
+      isRemote: false,
+      isHybrid: false,
+      isOnsite: false,
       countryFilter: ''
     });
   };
@@ -389,6 +459,24 @@ function App() {
                       }`}
                   >
                     <Globe className="h-4 w-4" /> Remote
+                  </button>
+                  <button
+                    onClick={() => applyQuickFilter('Hybrid')}
+                    className={`flex items-center gap-2 whitespace-nowrap rounded-full border px-4 py-2.5 text-sm font-medium transition-all duration-200 ${filters.isHybrid
+                      ? 'bg-white text-black border-white'
+                      : 'border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:border-zinc-600 hover:text-white'
+                      }`}
+                  >
+                    <Globe className="h-4 w-4" /> Hybrid
+                  </button>
+                  <button
+                    onClick={() => applyQuickFilter('Onsite')}
+                    className={`flex items-center gap-2 whitespace-nowrap rounded-full border px-4 py-2.5 text-sm font-medium transition-all duration-200 ${filters.isOnsite
+                      ? 'bg-white text-black border-white'
+                      : 'border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:border-zinc-600 hover:text-white'
+                      }`}
+                  >
+                    <MapPin className="h-4 w-4" /> Onsite
                   </button>
                   <button
                     onClick={() => applyQuickFilter('USA')}
@@ -502,12 +590,30 @@ function App() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => applyInternQuickFilter('Remote')}
-                    className={`flex items-center gap-2 whitespace-nowrap rounded-full border px-4 py-2.5 text-sm font-medium transition-all duration-200 ${internFilters.location.includes('Remote')
+                    className={`flex items-center gap-2 whitespace-nowrap rounded-full border px-4 py-2.5 text-sm font-medium transition-all duration-200 ${internFilters.isRemote
                       ? 'bg-purple-500 text-white border-purple-500'
                       : 'border-purple-900/50 bg-zinc-900/50 text-zinc-400 hover:border-purple-500 hover:text-white'
                       }`}
                   >
                     <Globe className="h-4 w-4" /> Remote
+                  </button>
+                  <button
+                    onClick={() => applyInternQuickFilter('Hybrid')}
+                    className={`flex items-center gap-2 whitespace-nowrap rounded-full border px-4 py-2.5 text-sm font-medium transition-all duration-200 ${internFilters.isHybrid
+                      ? 'bg-purple-500 text-white border-purple-500'
+                      : 'border-purple-900/50 bg-zinc-900/50 text-zinc-400 hover:border-purple-500 hover:text-white'
+                      }`}
+                  >
+                    <Globe className="h-4 w-4" /> Hybrid
+                  </button>
+                  <button
+                    onClick={() => applyInternQuickFilter('Onsite')}
+                    className={`flex items-center gap-2 whitespace-nowrap rounded-full border px-4 py-2.5 text-sm font-medium transition-all duration-200 ${internFilters.isOnsite
+                      ? 'bg-purple-500 text-white border-purple-500'
+                      : 'border-purple-900/50 bg-zinc-900/50 text-zinc-400 hover:border-purple-500 hover:text-white'
+                      }`}
+                  >
+                    <MapPin className="h-4 w-4" /> Onsite
                   </button>
                   <button
                     onClick={() => applyInternQuickFilter('USA')}

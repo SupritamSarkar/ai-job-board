@@ -6,10 +6,11 @@ from datetime import datetime, timedelta
 
 # --- IMPORT ALL SCRAPERS ---
 from naukri_scrapper import scrape_naukri
-from indeed_scrapper import scrape_indeed
 from naukri_intern_scrapper import scrape_naukri_intern
-from indeed_intern_scrapper import scrape_indeed_intern
 from internshala_scrapper import scrape_internshala
+from internshala_jobs_scrapper import scrape_internshala_jobs
+from dice_scrapper import scrape_dice
+from aijobs_scrapper import scrape_aijobs
 
 def is_recent(date_str):
     """
@@ -84,27 +85,43 @@ def main():
     current_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # ==========================================
-    # PHASE 1: FULL-TIME JOBS (Naukri - 7 pages)
+    # PHASE 1: FULL-TIME JOBS
     # ==========================================
     print("--- [PHASE 1] SCRAPING JOBS ---")
     
-    # 1.1 Naukri Jobs (7 pages)
+    # 1.1 Naukri Jobs
     try:
         naukri_jobs = scrape_naukri()
     except Exception as e:
         print(f"Error in Naukri Job Scraper: {e}")
         naukri_jobs = []
 
-    # 1.2 Indeed Jobs (disabled - blocked)
+    # 1.2 Dice Jobs
     try:
         time.sleep(2)
-        indeed_jobs = scrape_indeed()
+        dice_jobs = scrape_dice()
     except Exception as e:
-        print(f"Error in Indeed Job Scraper: {e}")
-        indeed_jobs = []
+        print(f"Error in Dice Job Scraper: {e}")
+        dice_jobs = []
+
+    # 1.3 AIJobs.ai Jobs
+    try:
+        time.sleep(2)
+        aijobs_jobs = scrape_aijobs()
+    except Exception as e:
+        print(f"Error in AIJobs Scraper: {e}")
+        aijobs_jobs = []
+
+    # 1.4 Internshala Fresher Jobs
+    try:
+        time.sleep(2)
+        internshala_jobs = scrape_internshala_jobs()
+    except Exception as e:
+        print(f"Error in Internshala Jobs Scraper: {e}")
+        internshala_jobs = []
 
     # Combine & Timestamp
-    new_jobs = naukri_jobs + indeed_jobs
+    new_jobs = naukri_jobs + dice_jobs + aijobs_jobs + internshala_jobs
     for job in new_jobs:
         job['Last_Updated'] = current_timestamp
 
@@ -117,26 +134,18 @@ def main():
 
 
     # ==========================================
-    # PHASE 2: INTERNSHIPS (Naukri + Internshala)
+    # PHASE 2: INTERNSHIPS
     # ==========================================
     print("--- [PHASE 2] SCRAPING INTERNSHIPS ---")
 
-    # 2.1 Naukri Internships (7 pages)
+    # 2.1 Naukri Internships
     try:
         naukri_interns = scrape_naukri_intern()
     except Exception as e:
         print(f"Error in Naukri Intern Scraper: {e}")
         naukri_interns = []
 
-    # 2.2 Indeed Internships (disabled - blocked)
-    try:
-        time.sleep(2)
-        indeed_interns = scrape_indeed_intern()
-    except Exception as e:
-        print(f"Error in Indeed Intern Scraper: {e}")
-        indeed_interns = []
-
-    # 2.3 Internshala Internships (7 pages) - WORKING!
+    # 2.2 Internshala Internships
     try:
         time.sleep(2)
         internshala_interns = scrape_internshala()
@@ -145,7 +154,7 @@ def main():
         internshala_interns = []
 
     # Combine & Timestamp
-    new_interns = naukri_interns + indeed_interns + internshala_interns
+    new_interns = naukri_interns + internshala_interns
     for item in new_interns:
         item['Last_Updated'] = current_timestamp
 

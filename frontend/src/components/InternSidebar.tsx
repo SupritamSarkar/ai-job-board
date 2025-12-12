@@ -8,6 +8,9 @@ interface InternFilterState {
     company: string;
     daysAgo: string;
     isPaid: boolean;
+    isRemote: boolean;
+    isHybrid: boolean;
+    isOnsite: boolean;
     countryFilter: string;
 }
 
@@ -32,7 +35,6 @@ const InternSidebar: React.FC<InternSidebarProps> = ({ filters, setFilters, onCl
 
     const hasActiveFilters =
         filters.location !== '' ||
-        filters.site !== 'All' ||
         filters.salaryDisclosed ||
         filters.company !== '' ||
         filters.daysAgo !== '' ||
@@ -117,25 +119,6 @@ const InternSidebar: React.FC<InternSidebarProps> = ({ filters, setFilters, onCl
                         <option value="7">Last 7 Days</option>
                         <option value="14">Last 14 Days</option>
                     </select>
-                </div>
-
-                {/* Site Source */}
-                <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Source</label>
-                    <div className="flex gap-2">
-                        {['All', 'Indeed', 'Naukri'].map((site) => (
-                            <button
-                                key={site}
-                                onClick={() => setFilters(prev => ({ ...prev, site }))}
-                                className={`flex-1 rounded-lg px-2 py-2 text-xs font-medium transition-all duration-200 ${filters.site === site
-                                    ? 'bg-purple-500 text-white'
-                                    : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white'
-                                    }`}
-                            >
-                                {site}
-                            </button>
-                        ))}
-                    </div>
                 </div>
 
                 {/* Divider */}
